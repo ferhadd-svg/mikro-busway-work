@@ -8,6 +8,8 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from app.database import engine, Base
 from app.config import settings
@@ -57,18 +59,28 @@ app.include_router(salespeople.router)
 app.include_router(projects.router)
 app.include_router(price_list_router.router)
 
+# Serve the browser UI
+_static_dir = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
-@app.get("/", tags=["Health"])
-def root():
-    return {
-        "service": "Mikro Busway Quotation Engine",
-        "version": "1.0.0",
-        "price_list_loaded": price_list.is_loaded(),
-        "price_list_file": Path(price_list.loaded_file()).name if price_list.loaded_file() else None,
-        "docs": "/docs",
-    }
+
+@app.get("/", tags=["UI"])
+def ui():
+    """Browser UI — open this in any web browser."""
+    return FileResponse(str(_static_dir / "index.html"))
 
 
 @app.get("/health", tags=["Health"])
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/status", tags=["Health"])
+def api_status():
+    return {
+        "service": "Mikro Busway Quotation Engine",
+        "version": "1.0.0",
+        "price_list_loaded": price_list.is_loaded(),
+        "price_list_file": Path(price_list.loaded_file()).name if price_list.loaded_file() else None,
+        "api_docs": "/docs",
+    }
