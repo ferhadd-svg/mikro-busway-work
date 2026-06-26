@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0"
 title Mikro Busway — First-Time Setup
 color 0A
 echo.
