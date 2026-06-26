@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0"
 title Mikro Busway — Quotation Engine
 color 0A
 echo.
