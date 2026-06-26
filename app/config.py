@@ -5,7 +5,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
-    anthropic_api_key: str
+    anthropic_api_key: str = ""   # optional — only needed for AI drawing read
     claude_model: str = "claude-sonnet-4-6"
     database_url: str = f"sqlite:///{BASE_DIR}/data/mikro_busway.db"
     data_dir: Path = BASE_DIR / "data"

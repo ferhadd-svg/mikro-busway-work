@@ -7,21 +7,11 @@ echo   Mikro Busway Quotation Engine
 echo =============================================
 echo.
 
-:: Check .env exists and has a real API key
+:: Check .env exists
 if not exist ".env" (
     color 0C
     echo ERROR: .env file not found.
     echo Run setup_windows.bat first.
-    pause
-    exit /b 1
-)
-
-findstr /C:"sk-ant-..." ".env" >nul
-if %errorlevel% equ 0 (
-    color 0E
-    echo WARNING: Your .env file still has the placeholder API key.
-    echo Open .env in Notepad and replace "sk-ant-..." with your real key.
-    echo.
     pause
     exit /b 1
 )

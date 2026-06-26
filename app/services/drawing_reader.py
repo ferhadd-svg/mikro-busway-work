@@ -141,6 +141,11 @@ def read_drawing(drawing_path: Path) -> DrawingExtraction:
     image_path = _resize_if_needed(image_path)
     b64_data, media_type = _image_to_b64(image_path)
 
+    if not settings.anthropic_api_key:
+        raise RuntimeError(
+            "No Anthropic API key set. Add ANTHROPIC_API_KEY to your .env file, "
+            "or use Manual Entry mode instead."
+        )
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
     message = client.messages.create(

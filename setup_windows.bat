@@ -47,20 +47,12 @@ echo.
 
 :: Create .env if missing
 if not exist ".env" (
-    copy ".env.example" ".env" >nul
+    echo ANTHROPIC_API_KEY=> ".env"
     echo [4/4] Created .env file.
-    echo.
-    color 0E
-    echo ACTION REQUIRED:
-    echo   Open the file ".env" in Notepad and replace
-    echo   "sk-ant-..." with your actual Anthropic API key.
-    echo.
-    echo   Get your key from: https://console.anthropic.com
-    echo.
 ) else (
     echo [4/4] .env file already exists.
-    echo.
 )
+echo.
 
 :: Seed database
 python -m app.seed
