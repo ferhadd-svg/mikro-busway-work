@@ -112,6 +112,56 @@ async def upload_drawing(
 
 
 # ------------------------------------------------------------------ #
+#  Step 2 (alt) — Manual run entry (no API key required)             #
+# ------------------------------------------------------------------ #
+
+@router.post("/{project_id}/runs/manual")
+def submit_runs_manually(
+    project_id: int,
+    runs: list[dict],
+    db: Session = Depends(get_db),
+):
+    """
+    Submit busway run data manually (no drawing / no Claude needed).
+    Each run must include: run_id, run_type, rating_a, material, earth_pct,
+    routing, length_m, piu_ratings. frame_rating_a is computed automatically.
+    """
+    from app.services.price_list import resolve_frame_rating
+    from app.schemas.boq import BusRun
+
+    project = _get_or_404(project_id, db)
+
+    validated_runs = []
+    for i, r in enumerate(runs):
+        r.setdefault("run_id", f"RUN-{i+1}")
+        r.setdefault("frame_rating_a", resolve_frame_rating(r.get("rating_a", 200)))
+        r.setdefault("needs_bimetal", r.get("material", "AL") == "AL")
+        r.setdefault("flags", [])
+        r.setdefault("piu_ratings", [])
+        r.setdefault("spare_openings", 0)
+        r.setdefault("phases", "3P4W")
+        r.setdefault("hanger_spacing_m", 1.5)
+        validated_runs.append(BusRun(**r))
+
+    extraction = DrawingExtraction(
+        runs=validated_runs,
+        global_flags=["Runs entered manually — no drawing uploaded."],
+        raw_notes="Manual entry",
+    )
+    project.drawing_extraction_json = extraction.model_dump_json()
+    project.status = "flags_pending"
+    db.commit()
+
+    return {
+        "project_id": project_id,
+        "status": "flags_pending",
+        "runs_found": len(validated_runs),
+        "flags": _build_flags_summary(extraction),
+        "extraction": extraction.model_dump(),
+    }
+
+
+# ------------------------------------------------------------------ #
 #  Step 3 — Get flags                                                 #
 # ------------------------------------------------------------------ #
 

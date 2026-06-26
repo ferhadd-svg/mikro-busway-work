@@ -289,7 +289,7 @@
       transition: all .15s;
       background: #fff;
     }
-    .proj-item:hover { border-color: var(--brand); background: #fff8f8; }
+    .proj-item:hover { border-color: var(--brand); background: #f0f5fc; }
     .proj-ref { font-weight: 700; font-size: .88rem; }
     .proj-client { font-size: .8rem; color: var(--muted); }
     .proj-status {
@@ -305,9 +305,86 @@
     .s-boq_ready { background: #e8f5e9; color: #2e7d32; }
     .s-quotation_ready { background: var(--green-light); color: var(--green); }
 
+    /* ── Mode selector ── */
+    .mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+    .mode-card {
+      border: 2px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      cursor: pointer;
+      transition: all .15s;
+      text-align: center;
+    }
+    .mode-card:hover { border-color: var(--brand); background: #f0f5fc; }
+    .mode-card.selected { border-color: var(--brand); background: #e8f0fb; }
+    .mode-card .mode-icon { font-size: 2rem; margin-bottom: 8px; }
+    .mode-card h3 { font-size: .92rem; font-weight: 700; margin-bottom: 4px; color: var(--text); }
+    .mode-card p { font-size: .78rem; color: var(--muted); line-height: 1.4; }
+
+    /* ── Run entry cards ── */
+    .run-entry-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 12px;
+      background: var(--grey);
+      position: relative;
+    }
+    .run-entry-card .run-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .run-entry-card .run-label {
+      font-weight: 700;
+      font-size: .85rem;
+      color: var(--brand);
+    }
+    .btn-remove {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .btn-remove:hover { color: #c0392b; }
+
+    /* ── Demo banner ── */
+    .demo-banner {
+      background: linear-gradient(135deg, #1F5FA6 0%, #174a82 100%);
+      color: #fff;
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .demo-banner .demo-icon { font-size: 2rem; }
+    .demo-banner h3 { font-size: .95rem; font-weight: 700; margin-bottom: 2px; }
+    .demo-banner p { font-size: .8rem; opacity: .85; }
+    .btn-demo {
+      margin-left: auto;
+      background: #fff;
+      color: var(--brand);
+      border: none;
+      border-radius: 6px;
+      padding: 8px 18px;
+      font-size: .85rem;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .btn-demo:hover { background: #e8f0fb; }
+
     @media (max-width: 600px) {
       .form-grid, .form-grid.three { grid-template-columns: 1fr; }
       .lme-row { flex-direction: column; }
+      .mode-cards { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -384,20 +461,57 @@
       </div>
     </div>
 
-    <!-- STEP 2: Upload drawing -->
+    <!-- STEP 2: Mode select + manual entry / upload -->
     <div class="section" id="step-2">
       <div class="card">
-        <div class="card-title">Step 2 — Upload SLD drawing</div>
-        <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-          <div class="icon">📐</div>
-          <p><strong>Click to browse</strong> or drag &amp; drop</p>
-          <p>PDF, PNG, JPG, TIF accepted</p>
+        <div class="card-title">Step 2 — Add busway runs</div>
+
+        <!-- Demo banner -->
+        <div class="demo-banner">
+          <div class="demo-icon">🎯</div>
+          <div>
+            <h3>Want to show a demo?</h3>
+            <p>Load the KWA-1605 worked example (3200A TX-MSB + 4× 800A risers) instantly.</p>
+          </div>
+          <button class="btn-demo" onclick="loadDemo()">Load Demo Data</button>
         </div>
-        <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff" onchange="uploadDrawing(this)" />
-        <div id="upload-progress" style="margin-top:14px;display:none;">
-          <div class="alert alert-info">
-            <div class="spinner"></div>
-            <span>Claude is reading your drawing (two-pass method)… this takes 15–30 seconds.</span>
+
+        <!-- Mode selector -->
+        <div class="mode-cards">
+          <div class="mode-card selected" id="mode-manual" onclick="selectMode('manual')">
+            <div class="mode-icon">✏️</div>
+            <h3>Enter manually</h3>
+            <p>Type in the run details yourself — no API key needed.</p>
+          </div>
+          <div class="mode-card" id="mode-ai" onclick="selectMode('ai')">
+            <div class="mode-icon">🤖</div>
+            <h3>Upload drawing (AI)</h3>
+            <p>Claude reads the SLD automatically. Requires an Anthropic API key.</p>
+          </div>
+        </div>
+
+        <!-- Manual entry panel -->
+        <div id="panel-manual">
+          <div id="runs-entry-list"></div>
+          <button class="btn btn-secondary" onclick="addRunCard()" style="margin-bottom:16px;">+ Add Run</button>
+          <div style="margin-top:4px;">
+            <button class="btn btn-primary" onclick="submitManualRuns()">Next: Confirm LME →</button>
+          </div>
+        </div>
+
+        <!-- AI upload panel -->
+        <div id="panel-ai" style="display:none;">
+          <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+            <div class="icon">📐</div>
+            <p><strong>Click to browse</strong> or drag &amp; drop</p>
+            <p>PDF, PNG, JPG, TIF accepted</p>
+          </div>
+          <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff" onchange="uploadDrawing(this)" />
+          <div id="upload-progress" style="margin-top:14px;display:none;">
+            <div class="alert alert-info">
+              <div class="spinner"></div>
+              <span>Claude is reading your drawing (two-pass method)… this takes 15–30 seconds.</span>
+            </div>
           </div>
         </div>
       </div>
@@ -556,7 +670,174 @@
     await loadSalespeople();
     await loadPriceListStatus();
     setupDragDrop();
+    addRunCard(); // start with one blank run card
   });
+
+  // ── Mode selector ──────────────────────────────────────────────────────
+  function selectMode(mode) {
+    document.getElementById('mode-manual').classList.toggle('selected', mode === 'manual');
+    document.getElementById('mode-ai').classList.toggle('selected', mode === 'ai');
+    document.getElementById('panel-manual').style.display = mode === 'manual' ? 'block' : 'none';
+    document.getElementById('panel-ai').style.display = mode === 'ai' ? 'block' : 'none';
+  }
+
+  // ── Run entry cards ────────────────────────────────────────────────────
+  let runCardCount = 0;
+
+  function addRunCard(data = {}) {
+    runCardCount++;
+    const id = runCardCount;
+    const list = document.getElementById('runs-entry-list');
+    const div = document.createElement('div');
+    div.className = 'run-entry-card';
+    div.id = `run-card-${id}`;
+    div.innerHTML = `
+      <div class="run-header">
+        <span class="run-label">Run ${id}</span>
+        <button class="btn-remove" onclick="removeRunCard(${id})" title="Remove">✕</button>
+      </div>
+      <div class="form-grid three">
+        <div class="form-group">
+          <label>Run Type <span class="req">*</span></label>
+          <select class="rc-type" data-id="${id}">
+            <option value="TX-MSB">TX-MSB (transformer → MSB)</option>
+            <option value="MSB-Riser">MSB-Riser (MSB flange end → riser)</option>
+            <option value="RISER">RISER (cable entry → riser)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Routing <span class="req">*</span></label>
+          <input class="rc-routing" data-id="${id}" placeholder="e.g. FROM TX TO MSB" value="${data.routing || ''}" />
+        </div>
+        <div class="form-group">
+          <label>Material <span class="req">*</span></label>
+          <select class="rc-material" data-id="${id}">
+            <option value="AL" ${(data.material||'AL')==='AL'?'selected':''}>Aluminium (AL)</option>
+            <option value="CU" ${data.material==='CU'?'selected':''}>Copper (CU)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Nominal Rating (A) <span class="req">*</span></label>
+          <input type="number" class="rc-rating" data-id="${id}" placeholder="e.g. 3200" value="${data.rating_a || ''}" min="100" />
+        </div>
+        <div class="form-group">
+          <label>Earth %</label>
+          <select class="rc-earth" data-id="${id}">
+            <option value="50" ${(data.earth_pct||50)===50?'selected':''}>50%E</option>
+            <option value="100" ${data.earth_pct===100?'selected':''}>100%E</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Feeder Length (m) <span class="req">*</span></label>
+          <input type="number" class="rc-length" data-id="${id}" placeholder="e.g. 12.5" step="0.1" min="0" value="${data.length_m || ''}" />
+        </div>
+        <div class="form-group full">
+          <label>PIU Ratings (A) — comma separated, leave blank if none</label>
+          <input class="rc-piu" data-id="${id}" placeholder="e.g. 150, 150, 60" value="${(data.piu_ratings||[]).join(', ')}" />
+        </div>
+      </div>`;
+    // Set run type selection
+    if (data.run_type) div.querySelector('.rc-type').value = data.run_type;
+    list.appendChild(div);
+  }
+
+  function removeRunCard(id) {
+    const el = document.getElementById(`run-card-${id}`);
+    if (el) el.remove();
+  }
+
+  function collectRunCards() {
+    const cards = document.querySelectorAll('.run-entry-card');
+    const runs = [];
+    let valid = true;
+    cards.forEach((card, i) => {
+      const id = card.id.replace('run-card-','');
+      const rating = parseInt(card.querySelector('.rc-rating').value);
+      const routing = card.querySelector('.rc-routing').value.trim();
+      const length = parseFloat(card.querySelector('.rc-length').value);
+      if (!rating || !routing || !length) { valid = false; return; }
+      const piuRaw = card.querySelector('.rc-piu').value.trim();
+      const piuRatings = piuRaw
+        ? piuRaw.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n > 0)
+        : [];
+      runs.push({
+        run_id: `RUN-${i+1}`,
+        run_type: card.querySelector('.rc-type').value,
+        rating_a: rating,
+        material: card.querySelector('.rc-material').value,
+        earth_pct: parseInt(card.querySelector('.rc-earth').value),
+        routing,
+        length_m: length,
+        piu_ratings: piuRatings,
+      });
+    });
+    return { runs, valid };
+  }
+
+  async function submitManualRuns() {
+    const { runs, valid } = collectRunCards();
+    if (!runs.length) { alert_('error', 'Add at least one run.'); return; }
+    if (!valid) { alert_('error', 'Please fill in Run Type, Routing, Rating and Length for every run.'); return; }
+    try {
+      const res = await api('POST', `/projects/${currentProjectId}/runs/manual`, runs);
+      extractionData = res;
+      populateFlags(res.flags, res.extraction);
+      goToStep(3);
+    } catch(e) {
+      alert_('error', e.message);
+    }
+  }
+
+  // ── Demo data (KWA-1605) ───────────────────────────────────────────────
+  const DEMO_PROJECT = {
+    our_ref: 'KWA-1605',
+    client_name: 'IOI Properties Group Sdn Bhd',
+    attn: 'Ir. Lim Wei Ming',
+    me_consultant: 'Ranhill Worley Sdn Bhd',
+  };
+
+  const DEMO_RUNS = [
+    { run_type: 'TX-MSB',    routing: 'FROM TX TO MSB',       material: 'CU', rating_a: 3200, earth_pct: 50, length_m: 8,    piu_ratings: [] },
+    { run_type: 'MSB-Riser', routing: 'FROM MSB TO L5 (GF)',  material: 'CU', rating_a: 800,  earth_pct: 50, length_m: 18,   piu_ratings: [150,150,150,150,150] },
+    { run_type: 'RISER',     routing: 'FROM L6 TO L11',        material: 'CU', rating_a: 800,  earth_pct: 50, length_m: 18,   piu_ratings: [150,150,150,150,150,150] },
+    { run_type: 'RISER',     routing: 'FROM L12 TO L17',       material: 'CU', rating_a: 800,  earth_pct: 50, length_m: 18,   piu_ratings: [150,150,150,150,150,150] },
+    { run_type: 'RISER',     routing: 'FROM L18 TO L23',       material: 'CU', rating_a: 800,  earth_pct: 50, length_m: 18,   piu_ratings: [150,150,150,150,150,150] },
+  ];
+
+  async function loadDemo() {
+    // Fill Step 1 fields
+    document.getElementById('our-ref').value = DEMO_PROJECT.our_ref;
+    document.getElementById('client-name').value = DEMO_PROJECT.client_name;
+    document.getElementById('attn').value = DEMO_PROJECT.attn;
+    document.getElementById('me-consultant').value = DEMO_PROJECT.me_consultant;
+    // Select first salesperson
+    const sel = document.getElementById('salesperson-id');
+    if (sel.options.length > 1) sel.selectedIndex = 1;
+
+    // Try to create the project (might already exist)
+    try {
+      const proj = await api('POST', '/projects/', {
+        our_ref: DEMO_PROJECT.our_ref + '-' + Date.now().toString().slice(-4),
+        client_name: DEMO_PROJECT.client_name,
+        attn: DEMO_PROJECT.attn,
+        me_consultant: DEMO_PROJECT.me_consultant,
+        salesperson_id: parseInt(sel.value) || 1,
+      });
+      currentProjectId = proj.id;
+    } catch(e) {
+      alert_('error', 'Could not create demo project: ' + e.message);
+      return;
+    }
+
+    // Pre-fill run cards
+    document.getElementById('runs-entry-list').innerHTML = '';
+    runCardCount = 0;
+    DEMO_RUNS.forEach(r => addRunCard(r));
+
+    goToStep(2);
+    clearAlerts();
+    alert_('success', 'Demo data loaded — KWA-1605 (3200A CU TX-MSB + 4× 800A risers). Hit "Next: Confirm LME" to continue.');
+  }
 
   // ── Tabs ───────────────────────────────────────────────────────────────
   function showTab(name) {
@@ -629,6 +910,10 @@
         salesperson_id: parseInt(spId),
       });
       currentProjectId = proj.id;
+      // Reset run cards for a fresh project
+      document.getElementById('runs-entry-list').innerHTML = '';
+      runCardCount = 0;
+      addRunCard();
       goToStep(2);
     } catch(e) {
       alert_('error', e.message);
