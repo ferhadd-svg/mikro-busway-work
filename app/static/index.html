@@ -8,8 +8,9 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --red: #C00000;
-      --red-dark: #900000;
+      --brand: #1F5FA6;
+      --brand-dark: #174a82;
+      --brand-light: #d6e4f4;
       --blue: #1f4e79;
       --blue-light: #d6e4f0;
       --green: #1a7a4a;
@@ -32,17 +33,41 @@
 
     /* ── Header ── */
     header {
-      background: var(--red);
+      background: var(--brand);
       color: #fff;
       padding: 0 32px;
-      height: 56px;
+      height: 64px;
       display: flex;
       align-items: center;
       gap: 16px;
       box-shadow: 0 2px 8px rgba(0,0,0,.25);
     }
-    header h1 { font-size: 1.1rem; font-weight: 700; letter-spacing: .5px; }
-    header span { font-size: .85rem; opacity: .8; }
+    header .logo-wrap {
+      background: #fff;
+      border-radius: 6px;
+      padding: 4px 10px;
+      display: flex;
+      align-items: center;
+      height: 44px;
+    }
+    header .logo-wrap img {
+      height: 36px;
+      width: auto;
+      display: block;
+    }
+    header .logo-text {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: 1px;
+      color: var(--brand);
+    }
+    header .divider {
+      width: 1px;
+      height: 28px;
+      background: rgba(255,255,255,.35);
+    }
+    header h1 { font-size: 1rem; font-weight: 600; letter-spacing: .3px; }
+    header span { font-size: .82rem; opacity: .75; }
     .badge {
       margin-left: auto;
       background: rgba(255,255,255,.2);
@@ -93,7 +118,7 @@
       white-space: nowrap;
       transition: all .15s;
     }
-    .step.active { color: var(--red); border-bottom-color: var(--red); }
+    .step.active { color: var(--brand); border-bottom-color: var(--brand); }
     .step.done { color: var(--green); }
     .step-num {
       width: 22px; height: 22px;
@@ -102,7 +127,7 @@
       display: flex; align-items: center; justify-content: center;
       font-size: .7rem; font-weight: 700;
     }
-    .step.active .step-num { background: var(--red); color: #fff; }
+    .step.active .step-num { background: var(--brand); color: #fff; }
     .step.done .step-num { background: var(--green); color: #fff; }
 
     /* ── Forms ── */
@@ -111,7 +136,7 @@
     .form-group { display: flex; flex-direction: column; gap: 5px; }
     .form-group.full { grid-column: 1 / -1; }
     label { font-size: .78rem; font-weight: 600; color: var(--text); }
-    label .req { color: var(--red); }
+    label .req { color: var(--brand); }
     input, select, textarea {
       border: 1px solid var(--border);
       border-radius: 6px;
@@ -140,8 +165,8 @@
       border: none;
       transition: all .15s;
     }
-    .btn-primary { background: var(--red); color: #fff; }
-    .btn-primary:hover { background: var(--red-dark); }
+    .btn-primary { background: var(--brand); color: #fff; box-shadow: 0 2px 6px rgba(31,95,166,.3); }
+    .btn-primary:hover { background: var(--brand-dark); }
     .btn-secondary { background: var(--blue-light); color: var(--blue); }
     .btn-secondary:hover { background: #bdd4e8; }
     .btn-success { background: var(--green); color: #fff; }
@@ -159,10 +184,10 @@
       cursor: pointer;
       transition: all .15s;
     }
-    .upload-zone:hover, .upload-zone.drag { border-color: var(--red); background: #fff5f5; }
+    .upload-zone:hover, .upload-zone.drag { border-color: var(--brand); background: #f0f5fc; }
     .upload-zone .icon { font-size: 2.5rem; margin-bottom: 8px; }
     .upload-zone p { font-size: .85rem; color: var(--muted); }
-    .upload-zone strong { color: var(--red); }
+    .upload-zone strong { color: var(--brand); }
     #file-input { display: none; }
 
     /* ── Flags ── */
@@ -264,7 +289,7 @@
       transition: all .15s;
       background: #fff;
     }
-    .proj-item:hover { border-color: var(--red); background: #fff8f8; }
+    .proj-item:hover { border-color: var(--brand); background: #fff8f8; }
     .proj-ref { font-weight: 700; font-size: .88rem; }
     .proj-client { font-size: .8rem; color: var(--muted); }
     .proj-status {
@@ -289,8 +314,16 @@
 <body>
 
 <header>
-  <h1>Mikro Busway</h1>
-  <span>Quotation Engine</span>
+  <div class="logo-wrap">
+    <img src="/static/mikro-logo.png" alt="Mikro"
+         onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
+    <span class="logo-text" style="display:none;">Mikro</span>
+  </div>
+  <div class="divider"></div>
+  <div>
+    <h1>Busway Quotation Engine</h1>
+    <span>Mikro Engineering Sdn Bhd</span>
+  </div>
   <div class="badge" id="price-list-badge">Loading…</div>
 </header>
 
@@ -798,7 +831,7 @@
           <span class="proj-status s-${p.status}">${p.status.replace(/_/g,' ')}</span>
         </div>`).join('');
     } catch(e) {
-      list.innerHTML = `<p style="color:var(--red);">Error: ${e.message}</p>`;
+      list.innerHTML = `<p style="color:var(--brand);">Error: ${e.message}</p>`;
     }
   }
 
@@ -819,7 +852,7 @@
       const el = document.getElementById('pl-status');
       if (el) el.innerHTML = info.loaded
         ? `<span style="color:var(--green);">✓ Active:</span> <strong>${info.filename}</strong>`
-        : `<span style="color:var(--red);">⚠ No price list loaded.</span> Upload one below.`;
+        : `<span style="color:var(--brand);">⚠ No price list loaded.</span> Upload one below.`;
     } catch(e) {}
   }
 
