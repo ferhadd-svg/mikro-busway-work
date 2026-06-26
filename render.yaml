@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: mikro-busway
+    runtime: python
+    buildCommand: pip install -r requirements.txt && python -m app.seed
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        value: ""          # optional — leave blank for manual/demo mode
+      - key: DATABASE_URL
+        value: sqlite:///./data/mikro_busway.db
+    disk:
+      name: data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1

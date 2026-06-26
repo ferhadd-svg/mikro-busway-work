@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+data/mikro_busway.db
+data/projects/
+data/price_list/
+data/templates/
+*.egg-info/
+dist/
+build/
+.DS_Store
