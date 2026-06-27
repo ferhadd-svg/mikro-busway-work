@@ -4,431 +4,627 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Mikro Busway — Quotation Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --brand: #1F5FA6;
-      --brand-dark: #174a82;
-      --brand-light: #d6e4f4;
-      --blue: #1f4e79;
-      --blue-light: #d6e4f0;
-      --green: #1a7a4a;
-      --green-light: #d4edda;
-      --orange: #c55a00;
-      --orange-light: #fde9d9;
-      --grey: #f4f6f9;
-      --border: #dde2ea;
-      --text: #1a1a2e;
-      --muted: #6c757d;
-      --radius: 8px;
+      --brand:       #1F5FA6;
+      --brand-dark:  #174a82;
+      --brand-light: #EBF2FB;
+      --green:       #0a7c52;
+      --green-light: #d4f0e3;
+      --orange:      #b95000;
+      --orange-light:#fff0e6;
+      --red:         #c0392b;
+      --red-light:   #fde8e8;
+      --grey-bg:     #f7f8fa;
+      --border:      #e8ecf0;
+      --text:        #0d1b2a;
+      --muted:       #7a8799;
+      --radius:      14px;
+      --shadow:      0 2px 16px rgba(13,27,42,.07);
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: var(--grey);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--grey-bg);
       color: var(--text);
       min-height: 100vh;
+      font-size: 15px;
     }
 
-    /* ── Header ── */
+    /* ── Header ─────────────────────────────────────────────── */
     header {
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      padding: 0 40px;
+      height: 72px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+    }
+    .logo-area img {
+      height: 38px;
+      width: auto;
+    }
+    .logo-fallback {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--brand);
+      letter-spacing: -.3px;
+    }
+    .logo-divider {
+      width: 1px;
+      height: 22px;
+      background: var(--border);
+    }
+    .logo-label {
+      font-size: .88rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    /* ── Top nav ─────────────────────────────────────────────── */
+    nav {
+      display: flex;
+      gap: 4px;
+      margin-left: auto;
+      align-items: center;
+    }
+    .nav-btn {
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: .86rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      transition: all .15s;
+    }
+    .nav-btn:hover { background: var(--grey-bg); color: var(--text); }
+    .nav-btn.active { background: var(--brand-light); color: var(--brand); }
+    .nav-pill {
       background: var(--brand);
       color: #fff;
-      padding: 0 32px;
-      height: 64px;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+      padding: 9px 20px;
+      border-radius: 8px;
+      font-size: .86rem;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      transition: background .15s;
     }
-    header .logo-wrap {
-      background: #fff;
-      border-radius: 6px;
-      padding: 4px 10px;
-      display: flex;
-      align-items: center;
-      height: 44px;
-    }
-    header .logo-wrap img {
-      height: 36px;
-      width: auto;
-      display: block;
-    }
-    header .logo-text {
-      font-size: 1.25rem;
-      font-weight: 800;
-      letter-spacing: 1px;
-      color: var(--brand);
-    }
-    header .divider {
-      width: 1px;
-      height: 28px;
-      background: rgba(255,255,255,.35);
-    }
-    header h1 { font-size: 1rem; font-weight: 600; letter-spacing: .3px; }
-    header span { font-size: .82rem; opacity: .75; }
-    .badge {
-      margin-left: auto;
-      background: rgba(255,255,255,.2);
-      padding: 3px 10px;
-      border-radius: 12px;
+    .nav-pill:hover { background: var(--brand-dark); }
+
+    .header-badge {
       font-size: .75rem;
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: 20px;
+      background: var(--grey-bg);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      white-space: nowrap;
     }
+    .header-badge.loaded { background: var(--green-light); color: var(--green); border-color: #a8dfc7; }
 
-    /* ── Layout ── */
-    main { max-width: 900px; margin: 32px auto; padding: 0 16px; }
+    /* ── Layout ─────────────────────────────────────────────── */
+    main { max-width: 860px; margin: 40px auto; padding: 0 20px 80px; }
 
-    /* ── Cards ── */
+    /* ── Cards ─────────────────────────────────────────────── */
     .card {
       background: #fff;
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 24px;
+      padding: 32px;
       margin-bottom: 20px;
-      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+      box-shadow: var(--shadow);
     }
-    .card-title {
-      font-size: .7rem;
+    .card-eyebrow {
+      font-size: .72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--brand);
+      margin-bottom: 6px;
+    }
+    .card-heading {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 24px;
+    }
+    .section-label {
+      font-size: .78rem;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 1px;
       color: var(--muted);
-      margin-bottom: 16px;
+      margin-bottom: 12px;
+      margin-top: 24px;
     }
+    .section-label:first-child { margin-top: 0; }
 
-    /* ── Steps ── */
-    .steps {
-      display: flex;
-      gap: 0;
-      margin-bottom: 28px;
+    /* ── Progress steps ─────────────────────────────────────── */
+    .progress-wrap {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 28px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow);
       overflow-x: auto;
     }
-    .step {
+    .steps {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 10px 14px;
-      border-radius: 0;
-      cursor: pointer;
-      font-size: .8rem;
-      font-weight: 600;
-      color: var(--muted);
-      border-bottom: 3px solid transparent;
-      white-space: nowrap;
-      transition: all .15s;
+      gap: 0;
+      min-width: max-content;
     }
-    .step.active { color: var(--brand); border-bottom-color: var(--brand); }
-    .step.done { color: var(--green); }
-    .step-num {
-      width: 22px; height: 22px;
+    .step-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 6px;
+      cursor: default;
+    }
+    .step-circle {
+      width: 30px;
+      height: 30px;
       border-radius: 50%;
+      background: var(--grey-bg);
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: .72rem;
+      font-weight: 700;
+      color: var(--muted);
+      flex-shrink: 0;
+      transition: all .2s;
+    }
+    .step-item.active .step-circle {
+      background: var(--brand);
+      border-color: var(--brand);
+      color: #fff;
+    }
+    .step-item.done .step-circle {
+      background: var(--green);
+      border-color: var(--green);
+      color: #fff;
+    }
+    .step-item.done .step-circle::after { content: '✓'; }
+    .step-item.done .step-circle span { display: none; }
+    .step-text { font-size: .8rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+    .step-item.active .step-text { color: var(--brand); }
+    .step-item.done .step-text { color: var(--green); }
+    .step-connector {
+      flex: 1;
+      height: 2px;
       background: var(--border);
-      display: flex; align-items: center; justify-content: center;
-      font-size: .7rem; font-weight: 700;
+      min-width: 24px;
+      max-width: 48px;
     }
-    .step.active .step-num { background: var(--brand); color: #fff; }
-    .step.done .step-num { background: var(--green); color: #fff; }
+    .step-connector.done { background: var(--green); }
 
-    /* ── Forms ── */
-    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    /* ── Forms ─────────────────────────────────────────────── */
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
     .form-grid.three { grid-template-columns: 1fr 1fr 1fr; }
-    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; }
     .form-group.full { grid-column: 1 / -1; }
-    label { font-size: .78rem; font-weight: 600; color: var(--text); }
-    label .req { color: var(--brand); }
-    input, select, textarea {
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 8px 11px;
-      font-size: .88rem;
-      color: var(--text);
-      transition: border-color .15s;
-      background: #fff;
+    label {
+      font-size: .79rem;
+      font-weight: 600;
+      color: #4a5568;
+      letter-spacing: .1px;
     }
+    label .req { color: var(--brand); margin-left: 2px; }
+    input, select, textarea {
+      border: 1.5px solid var(--border);
+      border-radius: 9px;
+      padding: 11px 14px;
+      font-size: .92rem;
+      font-family: inherit;
+      color: var(--text);
+      transition: border-color .15s, box-shadow .15s;
+      background: #fff;
+      height: 46px;
+    }
+    textarea { height: auto; }
     input:focus, select:focus, textarea:focus {
       outline: none;
-      border-color: var(--blue);
-      box-shadow: 0 0 0 3px rgba(31,78,121,.1);
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(31,95,166,.12);
     }
+    input::placeholder { color: #b0b8c4; }
 
-    /* ── Buttons ── */
+    /* ── Buttons ─────────────────────────────────────────────── */
     .btn {
       display: inline-flex;
       align-items: center;
-      gap: 7px;
-      padding: 9px 20px;
-      border-radius: 6px;
-      font-size: .88rem;
+      gap: 8px;
+      padding: 11px 22px;
+      border-radius: 9px;
+      font-size: .9rem;
       font-weight: 600;
       cursor: pointer;
       border: none;
+      font-family: inherit;
       transition: all .15s;
+      height: 46px;
     }
-    .btn-primary { background: var(--brand); color: #fff; box-shadow: 0 2px 6px rgba(31,95,166,.3); }
-    .btn-primary:hover { background: var(--brand-dark); }
-    .btn-secondary { background: var(--blue-light); color: var(--blue); }
-    .btn-secondary:hover { background: #bdd4e8; }
+    .btn-primary {
+      background: var(--brand);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(31,95,166,.25);
+    }
+    .btn-primary:hover { background: var(--brand-dark); box-shadow: 0 4px 12px rgba(31,95,166,.3); }
+    .btn-secondary {
+      background: var(--brand-light);
+      color: var(--brand);
+    }
+    .btn-secondary:hover { background: #d5e8f8; }
     .btn-success { background: var(--green); color: #fff; }
-    .btn-success:hover { background: #145e38; }
-    .btn-outline { background: transparent; color: var(--muted); border: 1px solid var(--border); }
-    .btn-outline:hover { background: var(--grey); }
-    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-success:hover { background: #08623f; }
+    .btn-outline {
+      background: #fff;
+      color: var(--muted);
+      border: 1.5px solid var(--border);
+    }
+    .btn-outline:hover { border-color: #c0c9d4; color: var(--text); background: var(--grey-bg); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; pointer-events: none; }
+    .btn-sm { padding: 7px 14px; font-size: .8rem; height: 34px; }
 
-    /* ── Upload zone ── */
+    /* ── Upload zone ─────────────────────────────────────────── */
     .upload-zone {
       border: 2px dashed var(--border);
       border-radius: var(--radius);
-      padding: 36px;
+      padding: 48px 32px;
       text-align: center;
       cursor: pointer;
-      transition: all .15s;
+      transition: all .2s;
+      background: var(--grey-bg);
     }
-    .upload-zone:hover, .upload-zone.drag { border-color: var(--brand); background: #f0f5fc; }
-    .upload-zone .icon { font-size: 2.5rem; margin-bottom: 8px; }
-    .upload-zone p { font-size: .85rem; color: var(--muted); }
+    .upload-zone:hover, .upload-zone.drag {
+      border-color: var(--brand);
+      background: var(--brand-light);
+    }
+    .upload-icon {
+      font-size: 2.8rem;
+      margin-bottom: 12px;
+    }
+    .upload-zone h3 { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+    .upload-zone p { font-size: .83rem; color: var(--muted); }
     .upload-zone strong { color: var(--brand); }
     #file-input { display: none; }
 
-    /* ── Flags ── */
+    /* ── Flags ─────────────────────────────────────────────── */
     .flag-list { display: flex; flex-direction: column; gap: 10px; }
     .flag-item {
       background: var(--orange-light);
-      border: 1px solid #f5cba7;
-      border-radius: 6px;
-      padding: 12px 14px;
-      font-size: .83rem;
-    }
-    .flag-item .flag-scope {
-      font-weight: 700;
-      color: var(--orange);
-      margin-bottom: 2px;
-      font-size: .75rem;
-      text-transform: uppercase;
-    }
-
-    /* ── Run table ── */
-    table { width: 100%; border-collapse: collapse; font-size: .83rem; }
-    th {
-      background: var(--blue);
-      color: #fff;
-      padding: 8px 10px;
-      text-align: left;
-      font-size: .75rem;
-      font-weight: 600;
-    }
-    td { padding: 8px 10px; border-bottom: 1px solid var(--border); }
-    tr:hover td { background: var(--grey); }
-    .tag {
-      display: inline-block;
-      padding: 2px 8px;
+      border: 1px solid #ffd4a8;
       border-radius: 10px;
-      font-size: .72rem;
-      font-weight: 700;
-    }
-    .tag-txmsb { background: #fce4d6; color: #843c00; }
-    .tag-msbriser { background: #dce6f1; color: var(--blue); }
-    .tag-riser { background: var(--green-light); color: var(--green); }
-    .tag-al { background: #fffde7; color: #6d5c00; }
-    .tag-cu { background: #f3e5f5; color: #6a1b9a; }
-
-    /* ── Totals ── */
-    .totals-block {
-      background: var(--grey);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 16px 20px;
-      margin-top: 16px;
-    }
-    .total-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: .88rem; }
-    .total-row.grand { font-weight: 700; font-size: 1rem; border-top: 2px solid var(--border); margin-top: 6px; padding-top: 10px; }
-
-    /* ── Alerts ── */
-    .alert {
-      border-radius: 6px;
-      padding: 12px 14px;
+      padding: 12px 16px;
       font-size: .84rem;
-      margin-bottom: 14px;
+    }
+    .flag-scope {
+      font-size: .7rem;
+      font-weight: 700;
+      letter-spacing: .8px;
+      text-transform: uppercase;
+      color: var(--orange);
+      margin-bottom: 3px;
+    }
+
+    /* ── Tables ─────────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+    thead { background: var(--grey-bg); }
+    th {
+      padding: 10px 14px;
+      text-align: left;
+      font-size: .73rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+    td { padding: 11px 14px; border-bottom: 1px solid var(--border); color: var(--text); }
+    tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: var(--grey-bg); }
+
+    /* ── Tags ─────────────────────────────────────────────── */
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: .71rem;
+      font-weight: 700;
+      letter-spacing: .2px;
+    }
+    .tag-txmsb   { background: #fce4d6; color: #7a2e00; }
+    .tag-msbriser{ background: #dce6f1; color: #1a3a6b; }
+    .tag-riser   { background: var(--green-light); color: var(--green); }
+    .tag-al      { background: #fefce8; color: #5c4a00; }
+    .tag-cu      { background: #f3e8ff; color: #5b1a9a; }
+
+    /* ── Totals ─────────────────────────────────────────────── */
+    .totals-block {
+      background: var(--grey-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-top: 20px;
+    }
+    .total-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      font-size: .9rem;
+      color: var(--muted);
+    }
+    .total-row span:last-child { font-weight: 600; color: var(--text); }
+    .total-row.grand {
+      font-weight: 800;
+      font-size: 1.05rem;
+      color: var(--text);
+      border-top: 2px solid var(--border);
+      margin-top: 8px;
+      padding-top: 14px;
+    }
+    .total-row.grand span { color: var(--brand); }
+
+    /* ── Alerts ─────────────────────────────────────────────── */
+    .alert {
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: .86rem;
+      margin-bottom: 16px;
       display: flex;
       align-items: flex-start;
       gap: 10px;
     }
-    .alert-error { background: #fde8e8; border: 1px solid #f5c6c6; color: #7b1a1a; }
-    .alert-success { background: var(--green-light); border: 1px solid #a8d5bb; color: #0f4a2b; }
-    .alert-info { background: var(--blue-light); border: 1px solid #a0c4e0; color: var(--blue); }
+    .alert-error   { background: var(--red-light); border: 1px solid #f5c6c6; color: #7b1a1a; }
+    .alert-success { background: var(--green-light); border: 1px solid #a3d9be; color: #0a4a2a; }
+    .alert-info    { background: var(--brand-light); border: 1px solid #b5d4f0; color: var(--brand); }
 
-    /* ── Spinner ── */
+    /* ── Spinner ─────────────────────────────────────────────── */
     .spinner {
-      width: 18px; height: 18px;
-      border: 2px solid rgba(255,255,255,.4);
+      width: 17px; height: 17px;
+      border: 2.5px solid rgba(255,255,255,.35);
       border-top-color: #fff;
       border-radius: 50%;
-      animation: spin .7s linear infinite;
+      animation: spin .65s linear infinite;
       display: inline-block;
+      flex-shrink: 0;
+    }
+    .spinner-dark {
+      border-color: rgba(31,95,166,.2);
+      border-top-color: var(--brand);
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── Sections ── */
+    /* ── Sections ─────────────────────────────────────────────── */
     .section { display: none; }
     .section.active { display: block; }
 
-    /* ── LME row ── */
-    .lme-row { display: flex; gap: 14px; align-items: flex-end; }
-    .lme-row .form-group { flex: 1; }
-
-    /* ── Project list ── */
-    .proj-list { display: flex; flex-direction: column; gap: 8px; }
-    .proj-item {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 12px 16px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
+    /* ── Mode selector ─────────────────────────────────────────── */
+    .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 24px; }
+    .mode-card {
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 22px;
       cursor: pointer;
       transition: all .15s;
       background: #fff;
     }
-    .proj-item:hover { border-color: var(--brand); background: #f0f5fc; }
-    .proj-ref { font-weight: 700; font-size: .88rem; }
-    .proj-client { font-size: .8rem; color: var(--muted); }
-    .proj-status {
-      margin-left: auto;
-      font-size: .72rem;
-      font-weight: 700;
-      padding: 3px 9px;
-      border-radius: 10px;
-    }
-    .s-draft { background: var(--border); color: var(--muted); }
-    .s-flags_pending, .s-reading_drawing { background: var(--orange-light); color: var(--orange); }
-    .s-flags_confirmed { background: var(--blue-light); color: var(--blue); }
-    .s-boq_ready { background: #e8f5e9; color: #2e7d32; }
-    .s-quotation_ready { background: var(--green-light); color: var(--green); }
+    .mode-card:hover { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(31,95,166,.08); }
+    .mode-card.selected { border-color: var(--brand); background: var(--brand-light); }
+    .mode-icon { font-size: 1.8rem; margin-bottom: 10px; }
+    .mode-card h3 { font-size: .95rem; font-weight: 700; margin-bottom: 5px; color: var(--text); }
+    .mode-card p  { font-size: .8rem; color: var(--muted); line-height: 1.5; }
 
-    /* ── Mode selector ── */
-    .mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
-    .mode-card {
-      border: 2px solid var(--border);
-      border-radius: var(--radius);
-      padding: 20px;
-      cursor: pointer;
-      transition: all .15s;
-      text-align: center;
-    }
-    .mode-card:hover { border-color: var(--brand); background: #f0f5fc; }
-    .mode-card.selected { border-color: var(--brand); background: #e8f0fb; }
-    .mode-card .mode-icon { font-size: 2rem; margin-bottom: 8px; }
-    .mode-card h3 { font-size: .92rem; font-weight: 700; margin-bottom: 4px; color: var(--text); }
-    .mode-card p { font-size: .78rem; color: var(--muted); line-height: 1.4; }
-
-    /* ── Run entry cards ── */
+    /* ── Run entry cards ─────────────────────────────────────── */
     .run-entry-card {
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 16px;
-      margin-bottom: 12px;
-      background: var(--grey);
-      position: relative;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 14px;
+      background: var(--grey-bg);
     }
-    .run-entry-card .run-header {
+    .run-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 12px;
+      margin-bottom: 16px;
     }
-    .run-entry-card .run-label {
-      font-weight: 700;
-      font-size: .85rem;
-      color: var(--brand);
-    }
+    .run-label { font-weight: 700; font-size: .88rem; color: var(--brand); }
     .btn-remove {
       background: none;
       border: none;
       color: var(--muted);
       cursor: pointer;
-      font-size: 1rem;
-      padding: 0 4px;
-      line-height: 1;
+      font-size: .9rem;
+      padding: 2px 6px;
+      border-radius: 6px;
+      transition: all .15s;
     }
-    .btn-remove:hover { color: #c0392b; }
+    .btn-remove:hover { color: var(--red); background: var(--red-light); }
 
-    /* ── Demo banner ── */
+    /* ── Demo banner ─────────────────────────────────────────── */
     .demo-banner {
-      background: linear-gradient(135deg, #1F5FA6 0%, #174a82 100%);
+      background: linear-gradient(135deg, var(--brand) 0%, #2a6db5 100%);
       color: #fff;
-      border-radius: var(--radius);
-      padding: 16px 20px;
-      margin-bottom: 20px;
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 24px;
       display: flex;
       align-items: center;
-      gap: 14px;
+      gap: 16px;
     }
-    .demo-banner .demo-icon { font-size: 2rem; }
-    .demo-banner h3 { font-size: .95rem; font-weight: 700; margin-bottom: 2px; }
-    .demo-banner p { font-size: .8rem; opacity: .85; }
+    .demo-icon { font-size: 2rem; flex-shrink: 0; }
+    .demo-banner h3 { font-size: .97rem; font-weight: 700; margin-bottom: 3px; }
+    .demo-banner p  { font-size: .8rem; opacity: .85; }
     .btn-demo {
       margin-left: auto;
-      background: #fff;
-      color: var(--brand);
-      border: none;
-      border-radius: 6px;
-      padding: 8px 18px;
-      font-size: .85rem;
+      background: rgba(255,255,255,.18);
+      color: #fff;
+      border: 1.5px solid rgba(255,255,255,.4);
+      border-radius: 8px;
+      padding: 9px 18px;
+      font-size: .84rem;
       font-weight: 700;
+      font-family: inherit;
       cursor: pointer;
       white-space: nowrap;
       flex-shrink: 0;
+      transition: all .15s;
     }
-    .btn-demo:hover { background: #e8f0fb; }
+    .btn-demo:hover { background: rgba(255,255,255,.28); border-color: rgba(255,255,255,.6); }
 
-    @media (max-width: 600px) {
+    /* ── Project list ─────────────────────────────────────────── */
+    .proj-list { display: flex; flex-direction: column; gap: 10px; }
+    .proj-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 16px 20px;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all .15s;
+      background: #fff;
+    }
+    .proj-item:hover { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(31,95,166,.08); }
+    .proj-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+    .proj-ref { font-weight: 700; font-size: .92rem; }
+    .proj-client { font-size: .8rem; color: var(--muted); margin-top: 1px; }
+    .proj-status {
+      margin-left: auto;
+      font-size: .72rem;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+    .s-draft            { background: var(--grey-bg); color: var(--muted); border: 1px solid var(--border); }
+    .s-flags_pending,
+    .s-reading_drawing  { background: var(--orange-light); color: var(--orange); }
+    .s-flags_confirmed  { background: var(--brand-light); color: var(--brand); }
+    .s-boq_ready        { background: #e8f5e9; color: #2e7d32; }
+    .s-quotation_ready  { background: var(--green-light); color: var(--green); }
+
+    /* ── LME row ─────────────────────────────────────────────── */
+    .lme-row { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+    .lme-row .form-group { flex: 1; min-width: 140px; }
+
+    /* ── Divider ─────────────────────────────────────────────── */
+    .divider { height: 1px; background: var(--border); margin: 24px 0; }
+
+    /* ── Empty state ─────────────────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 48px 20px;
+      color: var(--muted);
+    }
+    .empty-state .empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
+    .empty-state p { font-size: .88rem; }
+
+    /* ── Responsive ─────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      header { padding: 0 20px; }
+      main { margin: 20px auto; }
+      .card { padding: 20px; }
       .form-grid, .form-grid.three { grid-template-columns: 1fr; }
-      .lme-row { flex-direction: column; }
-      .mode-cards { grid-template-columns: 1fr; }
+      .mode-grid { grid-template-columns: 1fr; }
+      .demo-banner { flex-wrap: wrap; }
+      .btn-demo { margin-left: 0; }
+      nav .nav-btn span { display: none; }
     }
   </style>
 </head>
 <body>
 
+<!-- ── Header ─────────────────────────────────────────────────── -->
 <header>
-  <div class="logo-wrap">
+  <div class="logo-area">
     <img src="/static/mikro-logo.png" alt="Mikro"
-         onerror="this.style.display='none'; this.nextElementSibling.style.display='block';" />
-    <span class="logo-text" style="display:none;">Mikro</span>
+         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+    <span class="logo-fallback" style="display:none;">Mikro</span>
   </div>
-  <div class="divider"></div>
-  <div>
-    <h1>Busway Quotation Engine</h1>
-    <span>Mikro Engineering Sdn Bhd</span>
-  </div>
-  <div class="badge" id="price-list-badge">Loading…</div>
+  <div class="logo-divider"></div>
+  <span class="logo-label">Busway Quotation Engine</span>
+
+  <nav>
+    <button class="nav-pill" id="nav-new" onclick="showTab('new')">+ New Project</button>
+    <button class="nav-btn" id="nav-projects" onclick="showTab('projects')"><span>My Projects</span></button>
+    <button class="nav-btn" id="nav-admin" onclick="showTab('admin')"><span>Admin</span></button>
+  </nav>
+
+  <div class="header-badge" id="price-list-badge" style="margin-left:12px;">Loading…</div>
 </header>
 
+<!-- ── Main ───────────────────────────────────────────────────── -->
 <main>
-  <!-- Navigation tabs -->
-  <div style="display:flex; gap:8px; margin-bottom:20px;">
-    <button class="btn btn-primary" onclick="showTab('new')">+ New Project</button>
-    <button class="btn btn-outline" onclick="showTab('projects')">My Projects</button>
-    <button class="btn btn-outline" onclick="showTab('admin')">Admin</button>
-  </div>
+  <div id="alert-area"></div>
 
-  <!-- ═══════════════ NEW PROJECT TAB ═══════════════ -->
+  <!-- ═══════════ NEW PROJECT TAB ═══════════ -->
   <div id="tab-new">
-    <!-- Step indicator -->
-    <div class="steps" id="steps">
-      <div class="step active" data-step="1"><div class="step-num">1</div>Project details</div>
-      <div class="step" data-step="2"><div class="step-num">2</div>Upload drawing</div>
-      <div class="step" data-step="3"><div class="step-num">3</div>Confirm flags</div>
-      <div class="step" data-step="4"><div class="step-num">4</div>Generate BOQ</div>
-      <div class="step" data-step="5"><div class="step-num">5</div>Quotation</div>
+
+    <!-- Progress bar -->
+    <div class="progress-wrap">
+      <div class="steps" id="steps">
+        <div class="step-item active" data-step="1">
+          <div class="step-circle"><span>1</span></div>
+          <div class="step-text">Project details</div>
+        </div>
+        <div class="step-connector" id="conn-1"></div>
+        <div class="step-item" data-step="2">
+          <div class="step-circle"><span>2</span></div>
+          <div class="step-text">Add runs</div>
+        </div>
+        <div class="step-connector" id="conn-2"></div>
+        <div class="step-item" data-step="3">
+          <div class="step-circle"><span>3</span></div>
+          <div class="step-text">Confirm flags</div>
+        </div>
+        <div class="step-connector" id="conn-3"></div>
+        <div class="step-item" data-step="4">
+          <div class="step-circle"><span>4</span></div>
+          <div class="step-text">Generate BOQ</div>
+        </div>
+        <div class="step-connector" id="conn-4"></div>
+        <div class="step-item" data-step="5">
+          <div class="step-circle"><span>5</span></div>
+          <div class="step-text">Quotation</div>
+        </div>
+      </div>
     </div>
 
-    <div id="alert-area"></div>
-
-    <!-- STEP 1: Project details -->
+    <!-- STEP 1 -->
     <div class="section active" id="step-1">
       <div class="card">
-        <div class="card-title">Step 1 — Project details</div>
+        <div class="card-eyebrow">Step 1</div>
+        <div class="card-heading">Project details</div>
         <div class="form-grid">
           <div class="form-group">
             <label>Our Ref <span class="req">*</span></label>
@@ -453,129 +649,126 @@
             <input id="me-consultant" placeholder="Consultant name" />
           </div>
         </div>
-        <div style="margin-top:20px;">
+        <div style="margin-top:28px;">
           <button class="btn btn-primary" onclick="createProject()">
-            Next: Upload Drawing →
+            Continue to Add Runs →
           </button>
         </div>
       </div>
     </div>
 
-    <!-- STEP 2: Mode select + manual entry / upload -->
+    <!-- STEP 2 -->
     <div class="section" id="step-2">
       <div class="card">
-        <div class="card-title">Step 2 — Add busway runs</div>
+        <div class="card-eyebrow">Step 2</div>
+        <div class="card-heading">Add busway runs</div>
 
-        <!-- Demo banner -->
         <div class="demo-banner">
           <div class="demo-icon">🎯</div>
           <div>
-            <h3>Want to show a demo?</h3>
-            <p>Load the KWA-1605 worked example (3200A TX-MSB + 4× 800A risers) instantly.</p>
+            <h3>Try the demo project</h3>
+            <p>Load KWA-1605 — 3200A CU TX-MSB + 4× 800A risers — in one click.</p>
           </div>
-          <button class="btn-demo" onclick="loadDemo()">Load Demo Data</button>
+          <button class="btn-demo" onclick="loadDemo()">Load Demo</button>
         </div>
 
-        <!-- Mode selector -->
-        <div class="mode-cards">
+        <div class="mode-grid">
           <div class="mode-card selected" id="mode-manual" onclick="selectMode('manual')">
             <div class="mode-icon">✏️</div>
             <h3>Enter manually</h3>
-            <p>Type in the run details yourself — no API key needed.</p>
+            <p>Type run details yourself. No API key needed.</p>
           </div>
           <div class="mode-card" id="mode-ai" onclick="selectMode('ai')">
             <div class="mode-icon">🤖</div>
             <h3>Upload drawing (AI)</h3>
-            <p>Claude reads the SLD automatically. Requires an Anthropic API key.</p>
+            <p>Claude reads the SLD automatically. Requires Anthropic API key.</p>
           </div>
         </div>
 
-        <!-- Manual entry panel -->
+        <!-- Manual panel -->
         <div id="panel-manual">
           <div id="runs-entry-list"></div>
-          <button class="btn btn-secondary" onclick="addRunCard()" style="margin-bottom:16px;">+ Add Run</button>
-          <div style="margin-top:4px;">
-            <button class="btn btn-primary" onclick="submitManualRuns()">Next: Confirm LME →</button>
+          <button class="btn btn-secondary btn-sm" onclick="addRunCard()" style="margin-bottom:20px;">+ Add Another Run</button>
+          <div>
+            <button class="btn btn-primary" onclick="submitManualRuns()">Continue to Confirm Flags →</button>
           </div>
         </div>
 
-        <!-- AI upload panel -->
+        <!-- AI panel -->
         <div id="panel-ai" style="display:none;">
           <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
-            <div class="icon">📐</div>
-            <p><strong>Click to browse</strong> or drag &amp; drop</p>
-            <p>PDF, PNG, JPG, TIF accepted</p>
+            <div class="upload-icon">📐</div>
+            <h3><strong>Click to upload</strong> or drag &amp; drop</h3>
+            <p style="margin-top:4px;">PDF, PNG, JPG, TIF accepted</p>
           </div>
           <input type="file" id="file-input" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff" onchange="uploadDrawing(this)" />
-          <div id="upload-progress" style="margin-top:14px;display:none;">
+          <div id="upload-progress" style="margin-top:16px; display:none;">
             <div class="alert alert-info">
-              <div class="spinner"></div>
-              <span>Claude is reading your drawing (two-pass method)… this takes 15–30 seconds.</span>
+              <div class="spinner spinner-dark" style="border-top-color:var(--brand);border-color:rgba(31,95,166,.2);"></div>
+              <span>Claude is reading your drawing (two-pass method) — this takes 15–30 seconds.</span>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- STEP 3: Confirm flags -->
+    <!-- STEP 3 -->
     <div class="section" id="step-3">
       <div class="card">
-        <div class="card-title">Step 3 — Confirm flagged items</div>
+        <div class="card-eyebrow">Step 3</div>
+        <div class="card-heading">Confirm flagged items</div>
 
-        <!-- LME block (always required) -->
-        <div style="margin-bottom:20px;">
-          <div class="card-title" style="margin-bottom:10px;">LME Rates (required)</div>
-          <div class="lme-row">
-            <div class="form-group">
-              <label>LME (USD/MT) <span class="req">*</span></label>
-              <input type="number" id="lme-usd" placeholder="e.g. 3232" step="1" />
-            </div>
-            <div class="form-group">
-              <label>USD → MYR rate <span class="req">*</span></label>
-              <input type="number" id="usd-myr" placeholder="e.g. 4.7200" step="0.0001" />
-            </div>
-            <div class="form-group">
-              <label>PIU kA tier</label>
-              <select id="piu-ka">
-                <option value="26">26 kA</option>
-                <option value="36">36 kA</option>
-                <option value="50">50 kA</option>
-              </select>
-            </div>
+        <div class="section-label">LME Rates (required)</div>
+        <div class="lme-row">
+          <div class="form-group">
+            <label>LME (USD/MT) <span class="req">*</span></label>
+            <input type="number" id="lme-usd" placeholder="e.g. 3232" step="1" />
+          </div>
+          <div class="form-group">
+            <label>USD → MYR rate <span class="req">*</span></label>
+            <input type="number" id="usd-myr" placeholder="e.g. 4.7200" step="0.0001" />
+          </div>
+          <div class="form-group">
+            <label>PIU kA tier</label>
+            <select id="piu-ka">
+              <option value="26">26 kA</option>
+              <option value="36">36 kA</option>
+              <option value="50">50 kA</option>
+            </select>
           </div>
         </div>
 
-        <!-- Flags from Claude -->
-        <div class="card-title" style="margin-bottom:10px;">Flags from drawing read</div>
+        <div class="divider"></div>
+
+        <div class="section-label">Flags from drawing</div>
         <div class="flag-list" id="flag-list"></div>
 
-        <!-- Runs table -->
-        <div class="card-title" style="margin-top:20px; margin-bottom:10px;">Runs extracted</div>
-        <div style="overflow-x:auto;">
+        <div class="section-label" style="margin-top:24px;">Runs extracted</div>
+        <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Run ID</th><th>Type</th><th>Routing</th><th>Rating</th>
-                <th>Frame</th><th>Mat.</th><th>Earth%</th><th>Length (m)</th><th>PIU ratings</th>
+                <th>Run</th><th>Type</th><th>Routing</th><th>Rating</th>
+                <th>Frame</th><th>Mat.</th><th>Earth%</th><th>Length</th><th>PIU ratings</th>
               </tr>
             </thead>
             <tbody id="runs-table"></tbody>
           </table>
         </div>
 
-        <!-- Per-run overrides -->
         <div id="run-overrides" style="margin-top:20px;"></div>
 
-        <div style="margin-top:20px; display:flex; gap:10px;">
-          <button class="btn btn-primary" onclick="submitFlags()">Confirm &amp; Continue →</button>
+        <div style="margin-top:28px;">
+          <button class="btn btn-primary" onclick="submitFlags()">Confirm &amp; Build BOQ →</button>
         </div>
       </div>
     </div>
 
-    <!-- STEP 4: BOQ -->
+    <!-- STEP 4 -->
     <div class="section" id="step-4">
       <div class="card">
-        <div class="card-title">Step 4 — Bill of Quantities</div>
+        <div class="card-eyebrow">Step 4</div>
+        <div class="card-heading">Bill of Quantities</div>
         <div id="boq-content">
           <button class="btn btn-primary" onclick="generateBOQ()" id="gen-boq-btn">
             Generate BOQ
@@ -584,10 +777,11 @@
       </div>
     </div>
 
-    <!-- STEP 5: Quotation -->
+    <!-- STEP 5 -->
     <div class="section" id="step-5">
       <div class="card">
-        <div class="card-title">Step 5 — Priced Quotation</div>
+        <div class="card-eyebrow">Step 5</div>
+        <div class="card-heading">Priced Quotation</div>
         <div id="quotation-content">
           <button class="btn btn-success" onclick="generateQuotation()" id="gen-quot-btn">
             Generate Quotation
@@ -595,85 +789,120 @@
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- ═══════════════ PROJECTS TAB ═══════════════ -->
+  </div><!-- /tab-new -->
+
+  <!-- ═══════════ PROJECTS TAB ═══════════ -->
   <div id="tab-projects" style="display:none;">
     <div class="card">
-      <div class="card-title">All Projects</div>
-      <div class="proj-list" id="proj-list">Loading…</div>
+      <div class="card-eyebrow">Overview</div>
+      <div class="card-heading">All Projects</div>
+      <div class="proj-list" id="proj-list">
+        <div class="empty-state">
+          <div class="empty-icon">📂</div>
+          <p>Loading projects…</p>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- ═══════════════ ADMIN TAB ═══════════════ -->
+  <!-- ═══════════ ADMIN TAB ═══════════ -->
   <div id="tab-admin" style="display:none;">
-    <!-- Price list -->
     <div class="card">
-      <div class="card-title">Price List</div>
-      <div id="pl-status" style="margin-bottom:14px; font-size:.85rem; color:var(--muted);">Loading…</div>
-      <label class="btn btn-secondary" style="cursor:pointer;">
-        Upload new price list (.xls / .xlsx)
+      <div class="card-eyebrow">Configuration</div>
+      <div class="card-heading">Price List</div>
+      <div id="pl-status" style="margin-bottom:18px; font-size:.88rem; color:var(--muted);">Loading…</div>
+      <label class="btn btn-secondary" style="cursor:pointer; display:inline-flex;">
+        Upload price list (.xls / .xlsx)
         <input type="file" accept=".xls,.xlsx" style="display:none;" onchange="uploadPriceList(this)" />
       </label>
     </div>
 
-    <!-- Salespeople -->
     <div class="card">
-      <div class="card-title">Salespeople</div>
-      <div id="sp-list" style="margin-bottom:16px;"></div>
-      <div style="border-top:1px solid var(--border); padding-top:16px;">
-        <div class="card-title" style="margin-bottom:10px;">Add salesperson</div>
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Full Name <span class="req">*</span></label>
-            <input id="sp-name" placeholder="e.g. Ahmad Fariz" />
-          </div>
-          <div class="form-group">
-            <label>Title <span class="req">*</span></label>
-            <input id="sp-title" placeholder="e.g. Sales Engineer" />
-          </div>
-          <div class="form-group">
-            <label>Mobile</label>
-            <input id="sp-mobile" placeholder="+60 12-345 6789" />
-          </div>
-          <div class="form-group">
-            <label>Email</label>
-            <input id="sp-email" placeholder="ahmad@mikro.com.my" />
-          </div>
+      <div class="card-eyebrow">Team</div>
+      <div class="card-heading">Salespeople</div>
+      <div id="sp-list" style="margin-bottom:20px;"></div>
+      <div class="divider"></div>
+      <div class="section-label">Add salesperson</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Full Name <span class="req">*</span></label>
+          <input id="sp-name" placeholder="e.g. Ahmad Fariz" />
         </div>
-        <button class="btn btn-primary" style="margin-top:12px;" onclick="addSalesperson()">Add</button>
+        <div class="form-group">
+          <label>Title <span class="req">*</span></label>
+          <input id="sp-title" placeholder="e.g. Sales Engineer" />
+        </div>
+        <div class="form-group">
+          <label>Mobile</label>
+          <input id="sp-mobile" placeholder="+60 12-345 6789" />
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input id="sp-email" placeholder="ahmad@mikro.com.my" />
+        </div>
       </div>
+      <button class="btn btn-primary" style="margin-top:16px;" onclick="addSalesperson()">Add Salesperson</button>
     </div>
 
-    <!-- Template upload -->
     <div class="card">
-      <div class="card-title">Quotation Templates</div>
-      <p style="font-size:.83rem; color:var(--muted); margin-bottom:12px;">
-        Upload an Excel template for each salesperson. File must include the salesperson's first name
-        (e.g. <code>QUOTATION_TEMPLATE_ERIC.xlsx</code>).
+      <div class="card-eyebrow">Templates</div>
+      <div class="card-heading">Quotation Templates</div>
+      <p style="font-size:.84rem; color:var(--muted); margin-bottom:18px; line-height:1.6;">
+        Upload an Excel template per salesperson. File name must include their first name —
+        e.g. <code style="background:var(--grey-bg); padding:2px 6px; border-radius:4px;">QUOTATION_TEMPLATE_ERIC.xlsx</code>
       </p>
-      <label class="btn btn-secondary" style="cursor:pointer;">
+      <label class="btn btn-secondary" style="cursor:pointer; display:inline-flex;">
         Upload template (.xlsx)
         <input type="file" accept=".xlsx" style="display:none;" onchange="uploadTemplate(this)" />
       </label>
     </div>
   </div>
+
 </main>
 
 <script>
-  const API = '';  // same origin
+  const API = '';
   let currentProjectId = null;
   let extractionData = null;
 
-  // ── Init ───────────────────────────────────────────────────────────────
   window.addEventListener('DOMContentLoaded', async () => {
     await loadSalespeople();
     await loadPriceListStatus();
     setupDragDrop();
-    addRunCard(); // start with one blank run card
+    addRunCard();
   });
 
-  // ── Mode selector ──────────────────────────────────────────────────────
+  // ── Tabs ──────────────────────────────────────────────────────
+  function showTab(name) {
+    ['new','projects','admin'].forEach(t => {
+      document.getElementById(`tab-${t}`).style.display = t === name ? 'block' : 'none';
+    });
+    document.getElementById('nav-new').className = name === 'new' ? 'nav-pill' : 'nav-btn';
+    ['projects','admin'].forEach(t => {
+      document.getElementById(`nav-${t}`).className = t === name ? 'nav-btn active' : 'nav-btn';
+    });
+    if (name === 'projects') loadProjects();
+    if (name === 'admin') { loadSalespeopleAdmin(); loadPriceListStatus(); }
+  }
+
+  // ── Steps ─────────────────────────────────────────────────────
+  function goToStep(n) {
+    document.querySelectorAll('.section').forEach((s,i) => s.classList.toggle('active', i === n-1));
+    document.querySelectorAll('.step-item').forEach((s,i) => {
+      s.classList.remove('active','done');
+      if (i < n-1) s.classList.add('done');
+      if (i === n-1) s.classList.add('active');
+    });
+    for (let i = 1; i <= 4; i++) {
+      const c = document.getElementById(`conn-${i}`);
+      if (c) c.classList.toggle('done', i < n);
+    }
+    clearAlerts();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // ── Mode selector ─────────────────────────────────────────────
   function selectMode(mode) {
     document.getElementById('mode-manual').classList.toggle('selected', mode === 'manual');
     document.getElementById('mode-ai').classList.toggle('selected', mode === 'ai');
@@ -681,7 +910,7 @@
     document.getElementById('panel-ai').style.display = mode === 'ai' ? 'block' : 'none';
   }
 
-  // ── Run entry cards ────────────────────────────────────────────────────
+  // ── Run cards ─────────────────────────────────────────────────
   let runCardCount = 0;
 
   function addRunCard(data = {}) {
@@ -694,20 +923,20 @@
     div.innerHTML = `
       <div class="run-header">
         <span class="run-label">Run ${id}</span>
-        <button class="btn-remove" onclick="removeRunCard(${id})" title="Remove">✕</button>
+        <button class="btn-remove" onclick="removeRunCard(${id})">✕ Remove</button>
       </div>
       <div class="form-grid three">
         <div class="form-group">
           <label>Run Type <span class="req">*</span></label>
           <select class="rc-type" data-id="${id}">
             <option value="TX-MSB">TX-MSB (transformer → MSB)</option>
-            <option value="MSB-Riser">MSB-Riser (MSB flange end → riser)</option>
+            <option value="MSB-Riser">MSB-Riser (MSB → riser)</option>
             <option value="RISER">RISER (cable entry → riser)</option>
           </select>
         </div>
         <div class="form-group">
           <label>Routing <span class="req">*</span></label>
-          <input class="rc-routing" data-id="${id}" placeholder="e.g. FROM TX TO MSB" value="${data.routing || ''}" />
+          <input class="rc-routing" data-id="${id}" placeholder="e.g. FROM TX TO MSB" value="${data.routing||''}" />
         </div>
         <div class="form-group">
           <label>Material <span class="req">*</span></label>
@@ -718,7 +947,7 @@
         </div>
         <div class="form-group">
           <label>Nominal Rating (A) <span class="req">*</span></label>
-          <input type="number" class="rc-rating" data-id="${id}" placeholder="e.g. 3200" value="${data.rating_a || ''}" min="100" />
+          <input type="number" class="rc-rating" data-id="${id}" placeholder="e.g. 3200" value="${data.rating_a||''}" min="100" />
         </div>
         <div class="form-group">
           <label>Earth %</label>
@@ -729,14 +958,13 @@
         </div>
         <div class="form-group">
           <label>Feeder Length (m) <span class="req">*</span></label>
-          <input type="number" class="rc-length" data-id="${id}" placeholder="e.g. 12.5" step="0.1" min="0" value="${data.length_m || ''}" />
+          <input type="number" class="rc-length" data-id="${id}" placeholder="e.g. 12.5" step="0.1" min="0" value="${data.length_m||''}" />
         </div>
         <div class="form-group full">
           <label>PIU Ratings (A) — comma separated, leave blank if none</label>
           <input class="rc-piu" data-id="${id}" placeholder="e.g. 150, 150, 60" value="${(data.piu_ratings||[]).join(', ')}" />
         </div>
       </div>`;
-    // Set run type selection
     if (data.run_type) div.querySelector('.rc-type').value = data.run_type;
     list.appendChild(div);
   }
@@ -751,10 +979,9 @@
     const runs = [];
     let valid = true;
     cards.forEach((card, i) => {
-      const id = card.id.replace('run-card-','');
-      const rating = parseInt(card.querySelector('.rc-rating').value);
+      const rating  = parseInt(card.querySelector('.rc-rating').value);
       const routing = card.querySelector('.rc-routing').value.trim();
-      const length = parseFloat(card.querySelector('.rc-length').value);
+      const length  = parseFloat(card.querySelector('.rc-length').value);
       if (!rating || !routing || !length) { valid = false; return; }
       const piuRaw = card.querySelector('.rc-piu').value.trim();
       const piuRatings = piuRaw
@@ -766,9 +993,7 @@
         rating_a: rating,
         material: card.querySelector('.rc-material').value,
         earth_pct: parseInt(card.querySelector('.rc-earth').value),
-        routing,
-        length_m: length,
-        piu_ratings: piuRatings,
+        routing, length_m: length, piu_ratings: piuRatings,
       });
     });
     return { runs, valid };
@@ -777,113 +1002,71 @@
   async function submitManualRuns() {
     const { runs, valid } = collectRunCards();
     if (!runs.length) { alert_('error', 'Add at least one run.'); return; }
-    if (!valid) { alert_('error', 'Please fill in Run Type, Routing, Rating and Length for every run.'); return; }
+    if (!valid) { alert_('error', 'Please fill in Run Type, Routing, Rating, and Length for every run.'); return; }
     try {
       const res = await api('POST', `/projects/${currentProjectId}/runs/manual`, runs);
       extractionData = res;
       populateFlags(res.flags, res.extraction);
       goToStep(3);
-    } catch(e) {
-      alert_('error', e.message);
-    }
+    } catch(e) { alert_('error', e.message); }
   }
 
-  // ── Demo data (KWA-1605) ───────────────────────────────────────────────
+  // ── Demo ─────────────────────────────────────────────────────
   const DEMO_PROJECT = {
-    our_ref: 'KWA-1605',
-    client_name: 'IOI Properties Group Sdn Bhd',
-    attn: 'Ir. Lim Wei Ming',
-    me_consultant: 'Ranhill Worley Sdn Bhd',
+    our_ref: 'KWA-1605', client_name: 'IOI Properties Group Sdn Bhd',
+    attn: 'Ir. Lim Wei Ming', me_consultant: 'Ranhill Worley Sdn Bhd',
   };
-
   const DEMO_RUNS = [
-    { run_type: 'TX-MSB',    routing: 'FROM TX TO MSB',       material: 'CU', rating_a: 3200, earth_pct: 50, length_m: 8,    piu_ratings: [] },
-    { run_type: 'MSB-Riser', routing: 'FROM MSB TO L5 (GF)',  material: 'CU', rating_a: 800,  earth_pct: 50, length_m: 18,   piu_ratings: [150,150,150,150,150] },
-    { run_type: 'RISER',     routing: 'FROM L6 TO L11',        material: 'CU', rating_a: 800,  earth_pct: 50, length_m: 18,   piu_ratings: [150,150,150,150,150,150] },
-    { run_type: 'RISER',     routing: 'FROM L12 TO L17',       material: 'CU', rating_a: 800,  earth_pct: 50, length_m: 18,   piu_ratings: [150,150,150,150,150,150] },
-    { run_type: 'RISER',     routing: 'FROM L18 TO L23',       material: 'CU', rating_a: 800,  earth_pct: 50, length_m: 18,   piu_ratings: [150,150,150,150,150,150] },
+    { run_type:'TX-MSB',    routing:'FROM TX TO MSB',       material:'CU', rating_a:3200, earth_pct:50, length_m:8,  piu_ratings:[] },
+    { run_type:'MSB-Riser', routing:'FROM MSB TO L5 (GF)',  material:'CU', rating_a:800,  earth_pct:50, length_m:18, piu_ratings:[150,150,150,150,150] },
+    { run_type:'RISER',     routing:'FROM L6 TO L11',        material:'CU', rating_a:800,  earth_pct:50, length_m:18, piu_ratings:[150,150,150,150,150,150] },
+    { run_type:'RISER',     routing:'FROM L12 TO L17',       material:'CU', rating_a:800,  earth_pct:50, length_m:18, piu_ratings:[150,150,150,150,150,150] },
+    { run_type:'RISER',     routing:'FROM L18 TO L23',       material:'CU', rating_a:800,  earth_pct:50, length_m:18, piu_ratings:[150,150,150,150,150,150] },
   ];
 
   async function loadDemo() {
-    // Fill Step 1 fields
     document.getElementById('our-ref').value = DEMO_PROJECT.our_ref;
     document.getElementById('client-name').value = DEMO_PROJECT.client_name;
     document.getElementById('attn').value = DEMO_PROJECT.attn;
     document.getElementById('me-consultant').value = DEMO_PROJECT.me_consultant;
-    // Select first salesperson
     const sel = document.getElementById('salesperson-id');
     if (sel.options.length > 1) sel.selectedIndex = 1;
-
-    // Try to create the project (might already exist)
     try {
       const proj = await api('POST', '/projects/', {
         our_ref: DEMO_PROJECT.our_ref + '-' + Date.now().toString().slice(-4),
-        client_name: DEMO_PROJECT.client_name,
-        attn: DEMO_PROJECT.attn,
+        client_name: DEMO_PROJECT.client_name, attn: DEMO_PROJECT.attn,
         me_consultant: DEMO_PROJECT.me_consultant,
         salesperson_id: parseInt(sel.value) || 1,
       });
       currentProjectId = proj.id;
-    } catch(e) {
-      alert_('error', 'Could not create demo project: ' + e.message);
-      return;
-    }
-
-    // Pre-fill run cards
+    } catch(e) { alert_('error', 'Could not create demo project: ' + e.message); return; }
     document.getElementById('runs-entry-list').innerHTML = '';
     runCardCount = 0;
     DEMO_RUNS.forEach(r => addRunCard(r));
-
     goToStep(2);
     clearAlerts();
-    alert_('success', 'Demo data loaded — KWA-1605 (3200A CU TX-MSB + 4× 800A risers). Hit "Next: Confirm LME" to continue.');
+    alert_('success', 'Demo loaded — KWA-1605 (3200A CU TX-MSB + 4× 800A risers). Click "Continue to Confirm Flags" to proceed.');
   }
 
-  // ── Tabs ───────────────────────────────────────────────────────────────
-  function showTab(name) {
-    ['new','projects','admin'].forEach(t => {
-      document.getElementById(`tab-${t}`).style.display = t === name ? 'block' : 'none';
-    });
-    if (name === 'projects') loadProjects();
-    if (name === 'admin') { loadSalespeopleAdmin(); loadPriceListStatus(); }
-  }
-
-  // ── Steps ──────────────────────────────────────────────────────────────
-  function goToStep(n) {
-    document.querySelectorAll('.section').forEach((s,i) => {
-      s.classList.toggle('active', i === n - 1);
-    });
-    document.querySelectorAll('.step').forEach((s,i) => {
-      s.classList.remove('active','done');
-      if (i < n - 1) s.classList.add('done');
-      if (i === n - 1) s.classList.add('active');
-    });
-    clearAlerts();
-  }
-
-  // ── Alerts ─────────────────────────────────────────────────────────────
+  // ── Alerts ────────────────────────────────────────────────────
   function alert_(type, msg) {
-    const area = document.getElementById('alert-area');
-    area.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+    document.getElementById('alert-area').innerHTML =
+      `<div class="alert alert-${type}">${msg}</div>`;
   }
   function clearAlerts() { document.getElementById('alert-area').innerHTML = ''; }
 
-  // ── API helper ─────────────────────────────────────────────────────────
+  // ── API ───────────────────────────────────────────────────────
   async function api(method, path, body) {
     const opts = { method, headers: {} };
-    if (body instanceof FormData) {
-      opts.body = body;
-    } else if (body) {
-      opts.headers['Content-Type'] = 'application/json';
-      opts.body = JSON.stringify(body);
-    }
+    if (body instanceof FormData) { opts.body = body; }
+    else if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
     const res = await fetch(API + path, opts);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
     return data;
   }
 
-  // ── Salespeople loader ─────────────────────────────────────────────────
+  // ── Salespeople ───────────────────────────────────────────────
   async function loadSalespeople() {
     try {
       const list = await api('GET', '/salespeople/');
@@ -893,14 +1076,13 @@
     } catch(e) {}
   }
 
-  // ── STEP 1: Create project ─────────────────────────────────────────────
+  // ── Step 1 ────────────────────────────────────────────────────
   async function createProject() {
     const ourRef = document.getElementById('our-ref').value.trim();
-    const spId = document.getElementById('salesperson-id').value;
+    const spId   = document.getElementById('salesperson-id').value;
     const client = document.getElementById('client-name').value.trim();
     if (!ourRef || !client || !spId) {
-      alert_('error', 'Please fill in Our Ref, Client Name, and select a Salesperson.');
-      return;
+      alert_('error', 'Please fill in Our Ref, Client Name, and select a Salesperson.'); return;
     }
     try {
       const proj = await api('POST', '/projects/', {
@@ -910,23 +1092,19 @@
         salesperson_id: parseInt(spId),
       });
       currentProjectId = proj.id;
-      // Reset run cards for a fresh project
       document.getElementById('runs-entry-list').innerHTML = '';
       runCardCount = 0;
       addRunCard();
       goToStep(2);
-    } catch(e) {
-      alert_('error', e.message);
-    }
+    } catch(e) { alert_('error', e.message); }
   }
 
-  // ── STEP 2: Upload drawing ─────────────────────────────────────────────
+  // ── Step 2: Upload drawing ────────────────────────────────────
   async function uploadDrawing(input) {
     const file = input.files[0];
     if (!file) return;
     document.getElementById('upload-progress').style.display = 'block';
     document.getElementById('drop-zone').style.display = 'none';
-
     const fd = new FormData();
     fd.append('file', file);
     try {
@@ -941,94 +1119,68 @@
     }
   }
 
-  // ── STEP 3: Populate flags ─────────────────────────────────────────────
+  // ── Step 3: Flags ─────────────────────────────────────────────
   function populateFlags(flags, extraction) {
-    // Flags
     const fl = document.getElementById('flag-list');
     const nonLme = flags.filter(f => !f.message.startsWith('LME rate'));
     fl.innerHTML = nonLme.length
-      ? nonLme.map(f =>
-          `<div class="flag-item">
-            <div class="flag-scope">${f.scope || 'global'}</div>
-            <div>${f.message}</div>
-          </div>`).join('')
-      : '<div style="color:var(--green); font-size:.85rem;">No flags — drawing read cleanly.</div>';
+      ? nonLme.map(f => `<div class="flag-item"><div class="flag-scope">${f.scope||'global'}</div><div>${f.message}</div></div>`).join('')
+      : '<div style="color:var(--green); font-size:.85rem; font-weight:600;">✓ No flags — drawing read cleanly.</div>';
 
-    // Runs table
     const tbody = document.getElementById('runs-table');
-    tbody.innerHTML = (extraction.runs || []).map(r => {
-      const typeTag = r.run_type === 'TX-MSB' ? 'tag-txmsb'
-                    : r.run_type === 'MSB-Riser' ? 'tag-msbriser' : 'tag-riser';
-      const matTag = r.material === 'AL' ? 'tag-al' : 'tag-cu';
+    tbody.innerHTML = (extraction.runs||[]).map(r => {
+      const typeTag = r.run_type==='TX-MSB'?'tag-txmsb': r.run_type==='MSB-Riser'?'tag-msbriser':'tag-riser';
+      const matTag  = r.material==='AL'?'tag-al':'tag-cu';
       return `<tr>
-        <td>${r.run_id}</td>
+        <td><strong>${r.run_id}</strong></td>
         <td><span class="tag ${typeTag}">${r.run_type}</span></td>
         <td>${r.routing}</td>
         <td>${r.rating_a}A</td>
         <td>${r.frame_rating_a}A</td>
         <td><span class="tag ${matTag}">${r.material}</span></td>
         <td>${r.earth_pct}%E</td>
-        <td>${r.length_m !== null ? r.length_m + ' m' : '<em style="color:var(--orange)">unknown</em>'}</td>
-        <td>${(r.piu_ratings||[]).join(', ') || '—'}</td>
+        <td>${r.length_m!==null ? r.length_m+' m' : '<em style="color:var(--orange)">unknown</em>'}</td>
+        <td>${(r.piu_ratings||[]).join(', ')||'—'}</td>
       </tr>`;
     }).join('');
 
-    // Per-run length overrides for unknown lengths
     const overrideSection = document.getElementById('run-overrides');
-    const unknownRuns = (extraction.runs || []).filter(r => r.length_m === null);
-    if (unknownRuns.length) {
-      overrideSection.innerHTML = `
-        <div class="card-title" style="margin-bottom:10px;">Enter missing feeder lengths</div>
-        <div class="form-grid three">
-          ${unknownRuns.map(r => `
-            <div class="form-group">
-              <label>${r.run_id} — ${r.routing}</label>
-              <input type="number" id="len-${r.run_id}" placeholder="metres" step="0.1" min="0" />
-            </div>
-          `).join('')}
-        </div>`;
-    } else {
-      overrideSection.innerHTML = '';
-    }
+    const unknownRuns = (extraction.runs||[]).filter(r => r.length_m===null);
+    overrideSection.innerHTML = unknownRuns.length ? `
+      <div class="section-label">Enter missing feeder lengths</div>
+      <div class="form-grid three">
+        ${unknownRuns.map(r => `
+          <div class="form-group">
+            <label>${r.run_id} — ${r.routing}</label>
+            <input type="number" id="len-${r.run_id}" placeholder="metres" step="0.1" min="0" />
+          </div>`).join('')}
+      </div>` : '';
   }
 
-  // ── STEP 3: Submit flags ───────────────────────────────────────────────
   async function submitFlags() {
-    const lme = parseFloat(document.getElementById('lme-usd').value);
+    const lme    = parseFloat(document.getElementById('lme-usd').value);
     const usdMyr = parseFloat(document.getElementById('usd-myr').value);
-    if (!lme || !usdMyr) {
-      alert_('error', 'Please enter the LME rate and USD→MYR exchange rate.');
-      return;
-    }
-
-    // Collect per-run length overrides
+    if (!lme || !usdMyr) { alert_('error', 'Please enter the LME rate and USD→MYR exchange rate.'); return; }
     const runOverrides = {};
-    if (extractionData && extractionData.extraction) {
-      for (const r of extractionData.extraction.runs || []) {
-        if (r.length_m === null) {
-          const inp = document.getElementById(`len-${r.run_id}`);
-          const val = inp ? parseFloat(inp.value) : null;
-          if (val && val > 0) {
-            runOverrides[r.run_id] = { length_m: val };
-          }
+    if (extractionData?.extraction) {
+      for (const r of extractionData.extraction.runs||[]) {
+        if (r.length_m===null) {
+          const val = parseFloat(document.getElementById(`len-${r.run_id}`)?.value);
+          if (val > 0) runOverrides[r.run_id] = { length_m: val };
         }
       }
     }
-
     try {
       await api('POST', `/projects/${currentProjectId}/flags`, {
-        lme_usd_per_mt: lme,
-        usd_to_myr: usdMyr,
+        lme_usd_per_mt: lme, usd_to_myr: usdMyr,
         piu_ka: parseInt(document.getElementById('piu-ka').value),
         run_overrides: runOverrides,
       });
       goToStep(4);
-    } catch(e) {
-      alert_('error', e.message);
-    }
+    } catch(e) { alert_('error', e.message); }
   }
 
-  // ── STEP 4: Generate BOQ ───────────────────────────────────────────────
+  // ── Step 4: BOQ ───────────────────────────────────────────────
   async function generateBOQ() {
     const btn = document.getElementById('gen-boq-btn');
     btn.disabled = true;
@@ -1037,28 +1189,27 @@
       const boq = await api('POST', `/projects/${currentProjectId}/generate-boq`);
       const runsHtml = boq.runs.map(r => {
         const allItems = [...r.items, ...r.piu_items];
-        return `
-          <div style="margin-bottom:16px;">
-            <div style="font-weight:700; font-size:.85rem; margin-bottom:6px; color:var(--blue);">
-              ${r.run_id} — ${r.routing} (${r.run_type}, ${r.material})
-            </div>
+        return `<div style="margin-bottom:24px;">
+          <div style="font-weight:700; font-size:.88rem; margin-bottom:10px; color:var(--brand);">
+            ${r.run_id} — ${r.routing} <span style="font-weight:400; color:var(--muted);">(${r.run_type}, ${r.material})</span>
+          </div>
+          <div class="table-wrap">
             <table>
               <thead><tr><th>Description</th><th>Unit</th><th style="text-align:right">Qty</th><th style="text-align:right">Rate (RM)</th><th style="text-align:right">Amount (RM)</th></tr></thead>
               <tbody>
-                ${allItems.map(it => `
-                  <tr>
-                    <td>${it.description}</td>
-                    <td>${it.unit}</td>
-                    <td style="text-align:right">${it.qty}</td>
-                    <td style="text-align:right">${it.unit_rate_myr.toLocaleString()}</td>
-                    <td style="text-align:right"><strong>${it.amount_myr.toLocaleString()}</strong></td>
-                  </tr>`).join('')}
+                ${allItems.map(it => `<tr>
+                  <td>${it.description}</td><td>${it.unit}</td>
+                  <td style="text-align:right">${it.qty}</td>
+                  <td style="text-align:right">${it.unit_rate_myr.toLocaleString()}</td>
+                  <td style="text-align:right; font-weight:600;">${it.amount_myr.toLocaleString()}</td>
+                </tr>`).join('')}
               </tbody>
             </table>
-          </div>`;
+          </div>
+        </div>`;
       }).join('');
 
-      const sst = Math.round(boq.subtotal_myr * 0.10);
+      const sst   = Math.round(boq.subtotal_myr * 0.10);
       const grand = Math.round(boq.subtotal_myr + sst);
 
       document.getElementById('boq-content').innerHTML = `
@@ -1066,11 +1217,11 @@
         <div class="totals-block">
           <div class="total-row"><span>Sub-Total</span><span>RM ${Math.round(boq.subtotal_myr).toLocaleString()}</span></div>
           <div class="total-row"><span>10% SST</span><span>RM ${sst.toLocaleString()}</span></div>
-          <div class="total-row grand"><span>GRAND TOTAL</span><span>RM ${grand.toLocaleString()}</span></div>
+          <div class="total-row grand"><span>Grand Total</span><span>RM ${grand.toLocaleString()}</span></div>
         </div>
-        <div style="margin-top:16px; display:flex; gap:10px;">
-          <a href="/projects/${currentProjectId}/download/boq" class="btn btn-secondary" download>⬇ Download BOQ Excel</a>
-          <button class="btn btn-primary" onclick="goToStep(5)">Next: Generate Quotation →</button>
+        <div style="margin-top:20px; display:flex; gap:12px; flex-wrap:wrap;">
+          <a href="/projects/${currentProjectId}/download/boq" class="btn btn-outline" download>⬇ Download BOQ Excel</a>
+          <button class="btn btn-primary" onclick="goToStep(5)">Continue to Quotation →</button>
         </div>`;
     } catch(e) {
       alert_('error', e.message);
@@ -1079,7 +1230,7 @@
     }
   }
 
-  // ── STEP 5: Generate Quotation ─────────────────────────────────────────
+  // ── Step 5: Quotation ─────────────────────────────────────────
   async function generateQuotation() {
     const btn = document.getElementById('gen-quot-btn');
     btn.disabled = true;
@@ -1087,9 +1238,12 @@
     try {
       const res = await api('POST', `/projects/${currentProjectId}/generate-quotation`);
       document.getElementById('quotation-content').innerHTML = `
-        <div class="alert alert-success" style="margin-bottom:16px;">
-          Quotation ready — Grand Total: <strong>RM ${res.grand_total_myr.toLocaleString()}</strong>
-          (Sub-Total RM ${res.subtotal_myr.toLocaleString()} + 10% SST)
+        <div class="alert alert-success" style="margin-bottom:20px;">
+          <div>
+            <strong>Quotation ready</strong><br>
+            Grand Total: <strong>RM ${res.grand_total_myr.toLocaleString()}</strong>
+            &nbsp;·&nbsp; Sub-Total RM ${res.subtotal_myr.toLocaleString()} + 10% SST
+          </div>
         </div>
         <a href="/projects/${currentProjectId}/download/quotation" class="btn btn-success" download>
           ⬇ Download Quotation Excel
@@ -1101,14 +1255,22 @@
     }
   }
 
-  // ── Projects list ──────────────────────────────────────────────────────
+  // ── Projects list ─────────────────────────────────────────────
   async function loadProjects() {
     const list = document.getElementById('proj-list');
     try {
       const projects = await api('GET', '/projects/');
-      if (!projects.length) { list.innerHTML = '<p style="color:var(--muted); font-size:.85rem;">No projects yet.</p>'; return; }
+      if (!projects.length) {
+        list.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>No projects yet. Create one with the button above.</p></div>';
+        return;
+      }
       list.innerHTML = projects.map(p => `
         <div class="proj-item" onclick="openProject(${p.id})">
+          <div class="proj-dot" style="background:${{
+            draft:'var(--border)', reading_drawing:'var(--orange)',
+            flags_pending:'var(--orange)', flags_confirmed:'var(--brand)',
+            boq_ready:'#4CAF50', quotation_ready:'var(--green)'
+          }[p.status]||'var(--border)'}"></div>
           <div>
             <div class="proj-ref">${p.our_ref}</div>
             <div class="proj-client">${p.client_name}</div>
@@ -1116,28 +1278,27 @@
           <span class="proj-status s-${p.status}">${p.status.replace(/_/g,' ')}</span>
         </div>`).join('');
     } catch(e) {
-      list.innerHTML = `<p style="color:var(--brand);">Error: ${e.message}</p>`;
+      list.innerHTML = `<div class="alert alert-error">Error loading projects: ${e.message}</div>`;
     }
   }
 
   function openProject(id) {
     currentProjectId = id;
     showTab('new');
-    // TODO: restore project state from API
     alert_('info', `Project ${id} loaded. Use the steps above to continue.`);
   }
 
-  // ── Admin: Price list ──────────────────────────────────────────────────
+  // ── Admin ─────────────────────────────────────────────────────
   async function loadPriceListStatus() {
     try {
       const info = await api('GET', '/price-list/');
       const badge = document.getElementById('price-list-badge');
-      badge.textContent = info.loaded ? `Price list: ${info.filename}` : 'No price list loaded';
-      badge.style.background = info.loaded ? 'rgba(255,255,255,.3)' : 'rgba(255,100,100,.4)';
+      badge.textContent = info.loaded ? `✓ ${info.filename}` : 'No price list';
+      badge.className = 'header-badge' + (info.loaded ? ' loaded' : '');
       const el = document.getElementById('pl-status');
       if (el) el.innerHTML = info.loaded
-        ? `<span style="color:var(--green);">✓ Active:</span> <strong>${info.filename}</strong>`
-        : `<span style="color:var(--brand);">⚠ No price list loaded.</span> Upload one below.`;
+        ? `<span style="color:var(--green); font-weight:600;">✓ Active:</span> <strong>${info.filename}</strong>`
+        : `<span style="color:var(--orange); font-weight:600;">⚠ No price list loaded.</span> Upload one below.`;
     } catch(e) {}
   }
 
@@ -1150,47 +1311,42 @@
       await api('POST', '/price-list/upload', fd);
       await loadPriceListStatus();
       alert_('success', `Price list '${file.name}' uploaded and activated.`);
-    } catch(e) {
-      alert_('error', e.message);
-    }
+    } catch(e) { alert_('error', e.message); }
   }
 
-  // ── Admin: Salespeople ─────────────────────────────────────────────────
   async function loadSalespeopleAdmin() {
     const el = document.getElementById('sp-list');
     try {
       const list = await api('GET', '/salespeople/?active_only=false');
-      el.innerHTML = `<table>
-        <thead><tr><th>ID</th><th>Name</th><th>Title</th><th>Mobile</th><th>Email</th><th>Status</th></tr></thead>
-        <tbody>
-          ${list.map(s => `
-            <tr>
-              <td>${s.id}</td><td>${s.name}</td><td>${s.title}</td>
-              <td>${s.mobile}</td><td>${s.email}</td>
-              <td><span class="tag" style="background:${s.is_active?'var(--green-light)':'var(--border)'}; color:${s.is_active?'var(--green)':'var(--muted)'};">${s.is_active?'Active':'Inactive'}</span></td>
-            </tr>`).join('')}
-        </tbody>
-      </table>`;
-    } catch(e) { el.innerHTML = `Error: ${e.message}`; }
+      if (!list.length) { el.innerHTML = '<p style="color:var(--muted); font-size:.85rem;">No salespeople added yet.</p>'; return; }
+      el.innerHTML = `<div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th>Title</th><th>Mobile</th><th>Email</th><th>Status</th></tr></thead>
+        <tbody>${list.map(s => `<tr>
+          <td><strong>${s.name}</strong></td><td>${s.title}</td>
+          <td>${s.mobile||'—'}</td><td>${s.email||'—'}</td>
+          <td><span class="tag" style="background:${s.is_active?'var(--green-light)':'var(--grey-bg)'}; color:${s.is_active?'var(--green)':'var(--muted)'};">${s.is_active?'Active':'Inactive'}</span></td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+    } catch(e) { el.innerHTML = `<div class="alert alert-error">Error: ${e.message}</div>`; }
   }
 
   async function addSalesperson() {
-    const name = document.getElementById('sp-name').value.trim();
+    const name  = document.getElementById('sp-name').value.trim();
     const title = document.getElementById('sp-title').value.trim();
     if (!name || !title) { alert_('error', 'Name and title are required.'); return; }
     try {
       await api('POST', '/salespeople/', {
         name, title,
         mobile: document.getElementById('sp-mobile').value.trim(),
-        email: document.getElementById('sp-email').value.trim(),
+        email:  document.getElementById('sp-email').value.trim(),
       });
       ['sp-name','sp-title','sp-mobile','sp-email'].forEach(id => document.getElementById(id).value='');
       await loadSalespeopleAdmin();
       await loadSalespeople();
+      alert_('success', `${name} added successfully.`);
     } catch(e) { alert_('error', e.message); }
   }
 
-  // ── Template upload ────────────────────────────────────────────────────
   async function uploadTemplate(input) {
     const file = input.files[0];
     if (!file) return;
@@ -1202,7 +1358,7 @@
     } catch(e) { alert_('error', e.message); }
   }
 
-  // ── Drag & drop ────────────────────────────────────────────────────────
+  // ── Drag & drop ───────────────────────────────────────────────
   function setupDragDrop() {
     const zone = document.getElementById('drop-zone');
     zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
