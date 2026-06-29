@@ -70,17 +70,17 @@ def _terms_al(flags) -> list[tuple[str, str]]:
 
 def _terms_cu(flags) -> list[tuple[str, str]]:
     payment = (
-        f"30% deposit is required to secure LME CU USD{flags.lme_usd_per_mt:,.0f}/MT upon successful transfer to the account\n"
-        f"Price within +2% remain unchanged, variations over 2.3% require base of adjustment\n"
-        f"The balance is payable via an irrevocable 60days Letter Of Credit"
+        f"30% deposit is required to secure LME CU US{flags.lme_usd_per_mt:,.0f}/MT upon successful transfer to the account \n"
+        f"Price within +2% remain unchanged, variations over 2.3% require base of adjustment \n"
+        f"The balance is payable via an irrevocable 60days Letter Of Credit "
     )
     return [
         ("Manufacturer", "Mikro Busway Sdn Bhd, Malaysia."),
-        ("Validity",     f"Based on LME Copper@USD{flags.lme_usd_per_mt:,.0f}/MT and thereafter depends on current LME price"),
+        ("Validity",     f"Based on LME Copper@USD{flags.lme_usd_per_mt:,.0f}/ MT and thereafter depands on current LME price "),
         ("Delivery",     "Approximately 8 to 10 working weeks upon receipt of approval drawings."),
         ("Price",        "Ex-Nilai Factory in Ringgit Malaysia (RM)."),
         ("Payment",      payment),
-        ("Cancellation", "30% from total amount will be imposed on cancellation of purchase order"),
+        ("Cancellation", "30% from total amount will be imposed on cancellation of purchase order "),
     ]
 
 
