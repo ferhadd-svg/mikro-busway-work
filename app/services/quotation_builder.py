@@ -21,25 +21,50 @@ from app.config import settings
 
 
 REMARKS_AL = [
-    "All busway systems are manufactured to IEC 60439-2 standard.",
-    "Aluminium conductor busway — LME aluminium rate applies.",
-    "Price validity: 30 days from date of quotation.",
-    "Delivery: 8–12 weeks ex-factory Nilai upon confirmed order.",
-    "Payment terms: 30% down payment, 70% upon delivery.",
+    "The quantities quoted are rough estimation only. Final busway amount shall based on the actual delivery and approved shop-drawings.",
+    "All Bi-Metal materials for Aluminum Busway are by contractor.",
+    "Should any modification on factory standard dimensions are chargeable.",
+    "All horizontal hanger support are by contractor.",
+    "Any delivery to other than project site are subject to additional transportation surcharge.",
+    "The prices quoted are EXCLUDING all installation works, all termination of the busway to panels or transformers, testing and commissioning at site.",
+    "Warranty against manufacturing defects is 12 calendar months after delivery. This warranty does not cover reimbursement of consequential or incidental damages, labour, transportation, removal of the installation or any other expenses which may be incurred in connection with the repair and replacement.",
 ]
 
 REMARKS_CU = [
-    "All busway systems are manufactured to IEC 60439-2 standard.",
-    "Copper conductor busway — LME copper rate applies.",
-    "Price validity: 30 days from date of quotation.",
-    "Delivery: 8–12 weeks ex-factory Nilai upon confirmed order.",
-    "Payment terms: 30% down payment, 70% upon delivery.",
+    "The quantities quoted are rough estimation only. Final busway amount shall based on the actual delivery and approved shop-drawings.",
+    "All Bi-Metal materials for Copper Busway are by contractor.",
+    "Should any modification on factory standard dimensions are chargeable.",
+    "All horizontal hanger support are by contractor.",
+    "Any delivery to other than project site are subject to additional transportation surcharge.",
+    "The prices quoted are EXCLUDING all installation works, all termination of the busway to panels or transformers, testing and commissioning at site.",
+    "Warranty against manufacturing defects is 12 calendar months after delivery. This warranty does not cover reimbursement of consequential or incidental damages, labour, transportation, removal of the installation or any other expenses which may be incurred in connection with the repair and replacement.",
 ]
+
+
+def _terms_block(runs: list, flags) -> list[tuple[str, str]]:
+    """Return [(label, value)] rows for Manufacturer/Validity/Delivery/Price/Payment."""
+    materials = {r.material for r in runs}
+    if "CU" in materials:
+        lme_label = "LME Copper"
+    else:
+        lme_label = "LME Aluminium"
+
+    validity = (
+        f"Prices are based on {lme_label} at USD {flags.lme_usd_per_mt:,.0f}/MT. "
+        f"Any subsequent adjustment shall follow the prevailing {lme_label} price within a ±2% variation."
+    )
+    return [
+        ("Manufacturer", "Mikro Busway Sdn Bhd, Malaysia."),
+        ("Validity",     validity),
+        ("Delivery",     "Approximately 8 to 10 working weeks upon receipt of approval drawings."),
+        ("Price",        "Ex-Nilai Factory in Ringgit Malaysia (RM)."),
+        ("Payment",      "30% Deposit is required upon confirmation of order.\nBalance on Irrevocable Letter of Credit 60 Days."),
+    ]
 
 
 def _remarks_for_runs(runs: list[BOQRun]) -> list[str]:
     materials = {r.material for r in runs}
-    # Mixed Cu+Al → copper remarks govern
+    # Mixed Cu+Al -> copper remarks govern
     if "CU" in materials:
         return REMARKS_CU
     return REMARKS_AL
@@ -80,7 +105,6 @@ def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_
     Scan the template for known sentinel strings and replace them.
     Then inject item rows above the totals block.
     """
-    # Replace placeholder tokens
     _replace_tokens(ws, {
         "<<OUR_REF>>": our_ref,
         "<<CLIENT>>": client_name or "",
@@ -94,7 +118,6 @@ def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_
         "<<USD_MYR>>": f"USD 1 = RM {flags.usd_to_myr:.4f}",
     })
 
-    # Find the row that contains "SUB-TOTAL" or "SUBTOTAL"
     subtotal_row = None
     for row in ws.iter_rows():
         for cell in row:
@@ -106,11 +129,9 @@ def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_
             break
 
     if subtotal_row is None:
-        # Fallback: append items at the bottom
         _append_items(ws, runs, flags)
         return
 
-    # Find item start row (first blank row above subtotal that's below the header)
     insert_row = subtotal_row
     for r in range(subtotal_row - 1, 0, -1):
         all_empty = all(
@@ -144,7 +165,6 @@ def _insert_item_block(ws, runs: list[BOQRun], flags: FlagAnswers, start_row: in
     item_num = 1
 
     for run in runs:
-        # Section header
         ws.insert_rows(row)
         ws.merge_cells(f"A{row}:F{row}")
         c = ws.cell(row=row, column=1,
@@ -197,7 +217,6 @@ def _write_totals(ws, runs: list[BOQRun], subtotal_row: int):
         for cell in row:
             v = str(cell.value or "").upper()
             if "SUB-TOTAL" in v or "SUBTOTAL" in v:
-                # Amount is typically 2 cols to the right
                 ws.cell(row=cell.row, column=cell.column + 2).value = round(subtotal)
             if "SST" in v or "TAX" in v:
                 ws.cell(row=cell.row, column=cell.column + 2).value = sst
@@ -226,8 +245,8 @@ def _build_from_scratch(runs, flags, salesperson, our_ref, client_name, attn, me
     header_font = Font(bold=True, color="FFFFFF", size=12)
     bold = Font(bold=True)
 
-    ws.column_dimensions["A"].width = 8
-    ws.column_dimensions["B"].width = 50
+    ws.column_dimensions["A"].width = 20
+    ws.column_dimensions["B"].width = 60
     ws.column_dimensions["C"].width = 8
     ws.column_dimensions["D"].width = 10
     ws.column_dimensions["E"].width = 16
@@ -263,10 +282,18 @@ def _build_from_scratch(runs, flags, salesperson, our_ref, client_name, attn, me
     ws["D6"] = "Mobile:"
     ws["E6"] = salesperson.mobile
 
-    ws["A8"] = f"LME: USD {flags.lme_usd_per_mt:,.0f}/MT | USD 1 = RM {flags.usd_to_myr:.4f}"
-    ws["A8"].font = Font(italic=True)
-
+    # Terms block (Manufacturer, Validity, Delivery, Price, Payment)
     row = 10
+    label_font = Font(bold=True)
+    for label, value in _terms_block(runs, flags):
+        ws.cell(row=row, column=1, value=label).font = label_font
+        c = ws.cell(row=row, column=2, value=value)
+        c.alignment = Alignment(wrap_text=True)
+        ws.row_dimensions[row].height = 30 if "\n" in value or len(value) > 80 else 15
+        row += 1
+
+    row += 1  # blank spacer
+
     for col, header in enumerate(["No.", "DESCRIPTION", "UNIT", "QTY", "UNIT RATE (RM)", "AMOUNT (RM)"], 1):
         c = ws.cell(row=row, column=col, value=header)
         c.font = Font(bold=True, color="FFFFFF")
@@ -294,9 +321,11 @@ def _build_from_scratch(runs, flags, salesperson, our_ref, client_name, attn, me
 
     end_row += 2
     remarks = _remarks_for_runs(runs)
-    ws.cell(row=end_row, column=1, value="REMARKS:").font = bold
+    ws.cell(row=end_row, column=1, value="Remarks :").font = Font(bold=True, underline="single")
     for i, remark in enumerate(remarks, 1):
-        ws.cell(row=end_row + i, column=1, value=f"{i}. {remark}")
+        c = ws.cell(row=end_row + i, column=1, value=f"{i}.  {remark}")
+        c.alignment = Alignment(wrap_text=True)
+        ws.row_dimensions[end_row + i].height = 30 if len(remark) > 100 else 15
 
     sig_row = end_row + len(remarks) + 3
     ws.cell(row=sig_row, column=1, value="Prepared by:").font = bold
