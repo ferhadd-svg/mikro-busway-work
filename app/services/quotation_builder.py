@@ -9,6 +9,7 @@ Template structure assumptions (Mikro standard):
 """
 
 import copy
+from datetime import date
 from pathlib import Path
 
 import openpyxl
@@ -30,28 +31,33 @@ REMARKS_AL = [
     "Warranty against manufacturing defects is 12 calendar months after delivery. This warranty does not cover reimbursement of consequential or incidental damages, labour, transportation, removal of the installation or any other expenses which may be incurred in connection with the repair and replacement.",
 ]
 
-REMARKS_CU = [
-    "The quantities quoted are rough estimation only. Final busway amount shall based on the actual delivery and approved shop-drawings.",
-    "All Bi-Metal materials for Copper Busway are by contractor.",
-    "Should any modification on factory standard dimensions are chargeable.",
-    "All horizontal hanger support are by contractor.",
-    "Any delivery to other than project site are subject to additional transportation surcharge.",
-    "The prices quoted are EXCLUDING all installation works, all termination of the busway to panels or transformers, testing and commissioning at site.",
-    "Warranty against manufacturing defects is 12 calendar months after delivery. This warranty does not cover reimbursement of consequential or incidental damages, labour, transportation, removal of the installation or any other expenses which may be incurred in connection with the repair and replacement.",
-]
+
+def _remarks_cu(flags) -> list[str]:
+    today = date.today().strftime("%d-%m-%Y")
+    return [
+        "The quantities quoted are rough estimation only. Final busway amount shall based on the actual delivery and approved shop-drawings.",
+        "All Copper Bars are 100% Electro Tin-Plated.",
+        f"The prices quoted are based on {today} LME Copper @ USD {flags.lme_usd_per_mt:,.0f}/MT.",
+        "Should any modification on factory standard dimensions are chargeable.",
+        "All horizontal hanger support are by contractor.",
+        "Any delivery to other than project site are subject to additional transportation surcharge.",
+        "The prices quoted are EXCLUDING all installation works, all termination of the busway to panels or transformers, testing and commissioning at site.",
+        "Warranty against manufacturing defects is 12 calendar months after delivery. This warranty does not cover reimbursement of consequential or incidental damages, labour, transportation, removal of the installation or any other expenses which may be incurred in connection with the repair and replacement.",
+    ]
 
 
 def _terms_block(runs: list, flags) -> list[tuple[str, str]]:
     """Return [(label, value)] rows for Manufacturer/Validity/Delivery/Price/Payment."""
     materials = {r.material for r in runs}
     if "CU" in materials:
-        lme_label = "LME Copper"
-    else:
-        lme_label = "LME Aluminium"
+        return _terms_cu(flags)
+    return _terms_al(flags)
 
+
+def _terms_al(flags) -> list[tuple[str, str]]:
     validity = (
-        f"Prices are based on {lme_label} at USD {flags.lme_usd_per_mt:,.0f}/MT. "
-        f"Any subsequent adjustment shall follow the prevailing {lme_label} price within a ±2% variation."
+        f"Prices are based on LME Aluminium at USD {flags.lme_usd_per_mt:,.0f}/MT. "
+        f"Any subsequent adjustment shall follow the prevailing LME Aluminium price within a ±2% variation."
     )
     return [
         ("Manufacturer", "Mikro Busway Sdn Bhd, Malaysia."),
@@ -62,11 +68,26 @@ def _terms_block(runs: list, flags) -> list[tuple[str, str]]:
     ]
 
 
-def _remarks_for_runs(runs: list[BOQRun]) -> list[str]:
+def _terms_cu(flags) -> list[tuple[str, str]]:
+    payment = (
+        f"30% deposit is required to secure LME CU USD{flags.lme_usd_per_mt:,.0f}/MT upon successful transfer to the account\n"
+        f"Price within +2% remain unchanged, variations over 2.3% require base of adjustment\n"
+        f"The balance is payable via an irrevocable 60days Letter Of Credit"
+    )
+    return [
+        ("Manufacturer", "Mikro Busway Sdn Bhd, Malaysia."),
+        ("Validity",     f"Based on LME Copper@USD{flags.lme_usd_per_mt:,.0f}/MT and thereafter depends on current LME price"),
+        ("Delivery",     "Approximately 8 to 10 working weeks upon receipt of approval drawings."),
+        ("Price",        "Ex-Nilai Factory in Ringgit Malaysia (RM)."),
+        ("Payment",      payment),
+        ("Cancellation", "30% from total amount will be imposed on cancellation of purchase order"),
+    ]
+
+
+def _remarks_for_runs(runs: list[BOQRun], flags) -> list[str]:
     materials = {r.material for r in runs}
-    # Mixed Cu+Al -> copper remarks govern
     if "CU" in materials:
-        return REMARKS_CU
+        return _remarks_cu(flags)
     return REMARKS_AL
 
 
@@ -282,14 +303,14 @@ def _build_from_scratch(runs, flags, salesperson, our_ref, client_name, attn, me
     ws["D6"] = "Mobile:"
     ws["E6"] = salesperson.mobile
 
-    # Terms block (Manufacturer, Validity, Delivery, Price, Payment)
+    # Terms block (Manufacturer, Validity, Delivery, Price, Payment / Cancellation)
     row = 10
     label_font = Font(bold=True)
     for label, value in _terms_block(runs, flags):
         ws.cell(row=row, column=1, value=label).font = label_font
         c = ws.cell(row=row, column=2, value=value)
         c.alignment = Alignment(wrap_text=True)
-        ws.row_dimensions[row].height = 30 if "\n" in value or len(value) > 80 else 15
+        ws.row_dimensions[row].height = 45 if value.count("\n") >= 2 else (30 if "\n" in value or len(value) > 80 else 15)
         row += 1
 
     row += 1  # blank spacer
@@ -320,7 +341,7 @@ def _build_from_scratch(runs, flags, salesperson, our_ref, client_name, attn, me
     ws.cell(row=end_row, column=6, value=grand).font = Font(bold=True, size=12)
 
     end_row += 2
-    remarks = _remarks_for_runs(runs)
+    remarks = _remarks_for_runs(runs, flags)
     ws.cell(row=end_row, column=1, value="Remarks :").font = Font(bold=True, underline="single")
     for i, remark in enumerate(remarks, 1):
         c = ws.cell(row=end_row + i, column=1, value=f"{i}.  {remark}")
