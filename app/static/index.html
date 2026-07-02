@@ -551,14 +551,54 @@
 
     /* ── Responsive ─────────────────────────────────────────── */
     @media (max-width: 640px) {
-      header { padding: 0 20px; }
-      main { margin: 20px auto; }
-      .card { padding: 20px; }
+      /* Header: wrap instead of overflowing, compact spacing, drop the
+         redundant label so the logo + nav fit on small screens. */
+      header {
+        height: auto;
+        min-height: 58px;
+        padding: 10px 16px;
+        flex-wrap: wrap;
+        gap: 8px 10px;
+      }
+      .logo-area img { height: 30px; }
+      .logo-divider, .logo-label { display: none; }
+      nav { margin-left: auto; gap: 4px; }
+      .nav-pill { padding: 8px 14px; font-size: .82rem; }
+      .nav-btn  { padding: 8px 12px; font-size: .82rem; }
+      .header-badge {
+        margin-left: 0 !important;
+        flex-basis: 100%;
+        text-align: center;
+      }
+
+      /* Layout spacing */
+      main { margin: 16px auto; padding: 0 14px 60px; }
+      .card { padding: 18px; }
+      .card-heading { font-size: 1.12rem; margin-bottom: 18px; }
+      .upload-zone { padding: 32px 18px; }
+      .progress-wrap { padding: 14px 16px; }
+
+      /* Stack multi-column grids into a single column */
       .form-grid, .form-grid.three { grid-template-columns: 1fr; }
       .mode-grid { grid-template-columns: 1fr; }
-      .demo-banner { flex-wrap: wrap; }
-      .btn-demo { margin-left: 0; }
-      nav .nav-btn span { display: none; }
+
+      /* Banners / totals wrap cleanly */
+      .demo-banner { flex-wrap: wrap; padding: 18px; }
+      .btn-demo { margin-left: 0; width: 100%; justify-content: center; }
+      .totals-block { padding: 18px; }
+    }
+
+    @media (max-width: 430px) {
+      /* Nav drops to its own full-width row, evenly spread */
+      nav {
+        flex-basis: 100%;
+        margin-left: 0;
+        justify-content: space-between;
+      }
+      .nav-pill, .nav-btn { padding: 8px 10px; font-size: .8rem; }
+      /* Full-width primary actions are easier to tap on a phone */
+      .btn { width: 100%; justify-content: center; }
+      .btn-sm { width: auto; }
     }
   </style>
 </head>
