@@ -82,5 +82,6 @@ def api_status():
         "version": "1.0.0",
         "price_list_loaded": price_list.is_loaded(),
         "price_list_file": Path(price_list.loaded_file()).name if price_list.loaded_file() else None,
+        "ai_reader_enabled": bool(settings.anthropic_api_key),  # True once ANTHROPIC_API_KEY is set (value never exposed)
         "api_docs": "/docs",
     }
