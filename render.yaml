@@ -6,7 +6,7 @@ services:
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: ANTHROPIC_API_KEY
-        value: ""          # optional — leave blank for manual/demo mode
+        sync: false        # secret — set the value in the Render dashboard (Environment tab), not in this file
       - key: DATABASE_URL
         value: sqlite:///./data/mikro_busway.db
     disk:
