@@ -14,13 +14,13 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     cors_origins: str = "*"
 
-    openai_api_key: str = ""
-    openai_model: str = "gpt-5.5"
-    openai_max_output_tokens: int = 4096
-    openai_timeout_seconds: float = 90.0
-    openai_max_retries: int = 3
-    openai_max_file_bytes: int = 10 * 1024 * 1024
-    openai_max_image_px: int = 6000
+    anthropic_api_key: str = ""
+    claude_model: str = "claude-sonnet-5"
+    claude_max_tokens: int = 4096
+    claude_timeout_seconds: float = 90.0
+    claude_max_retries: int = 3
+    claude_max_file_bytes: int = 10 * 1024 * 1024
+    claude_max_image_px: int = 2000
     max_extracted_text_chars: int = 60000
     max_upload_bytes: int = 25 * 1024 * 1024
 
