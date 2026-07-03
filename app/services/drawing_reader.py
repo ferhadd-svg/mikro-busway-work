@@ -10,13 +10,16 @@ Returns DrawingExtraction (structured runs + flags).
 
 import base64
 import json
-import subprocess
-import tempfile
 from pathlib import Path
 from typing import Optional
 
 import anthropic
 from PIL import Image
+
+try:  # PyMuPDF renders PDF pages to images with no system tools (works on Render)
+    import pymupdf as fitz
+except ImportError:  # older PyMuPDF versions expose the module as "fitz"
+    import fitz
 
 from app.config import settings
 from app.schemas.boq import DrawingExtraction, BusRun
@@ -89,24 +92,47 @@ Respond with ONLY a JSON object — no markdown fences, no commentary. Schema:
 
 
 def _pdf_to_image(pdf_path: Path) -> Path:
-    """Rasterize first page of PDF at 150 DPI, return PNG path."""
-    out_dir = pdf_path.parent
-    prefix = pdf_path.stem
-    result = subprocess.run(
-        ["pdftoppm", "-r", "150", "-l", "1", "-png", str(pdf_path), str(out_dir / prefix)],
-        capture_output=True,
-    )
-    # pdftoppm produces <prefix>-1.png (or -01.png depending on version)
-    candidates = list(out_dir.glob(f"{prefix}*.png"))
-    if not candidates:
-        raise RuntimeError(f"pdftoppm failed: {result.stderr.decode()}")
-    return sorted(candidates)[0]
+    """Rasterize the first page of a PDF to a PNG using PyMuPDF (no system deps)."""
+    try:
+        doc = fitz.open(str(pdf_path))
+    except Exception as e:
+        raise RuntimeError(f"Could not open the PDF drawing: {e}")
+    try:
+        if doc.page_count == 0:
+            raise RuntimeError("The PDF drawing has no pages.")
+        page = doc.load_page(0)  # first page
+        # PDFs default to 72 DPI; zoom to ~150 DPI for a legible raster.
+        pix = page.get_pixmap(matrix=fitz.Matrix(150 / 72, 150 / 72))
+        out_path = pdf_path.with_suffix(".png")
+        pix.save(str(out_path))
+    finally:
+        doc.close()
+    return out_path
+
+
+def _ensure_supported_image(image_path: Path) -> Path:
+    """Claude vision accepts jpeg/png/gif/webp. Convert anything else
+    (e.g. TIFF) to PNG so every uploaded image works."""
+    if image_path.suffix.lower() in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
+        return image_path
+    img = Image.open(image_path)
+    if img.mode not in ("RGB", "RGBA"):
+        img = img.convert("RGB")
+    out_path = image_path.with_suffix(".png")
+    img.save(out_path, "PNG")
+    return out_path
 
 
 def _image_to_b64(image_path: Path) -> tuple[str, str]:
     """Return (base64_data, media_type)."""
     suffix = image_path.suffix.lower()
-    media_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
+    media_map = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+    }
     media_type = media_map.get(suffix, "image/png")
     with open(image_path, "rb") as f:
         data = base64.standard_b64encode(f.read()).decode()
@@ -132,11 +158,11 @@ def read_drawing(drawing_path: Path) -> DrawingExtraction:
     Main entry point. Accepts PDF or image file.
     Calls Claude with vision and returns a DrawingExtraction.
     """
-    # Convert PDF → image
+    # Convert PDF → image; normalise other image formats (TIFF etc.) to PNG
     if drawing_path.suffix.lower() == ".pdf":
         image_path = _pdf_to_image(drawing_path)
     else:
-        image_path = drawing_path
+        image_path = _ensure_supported_image(drawing_path)
 
     image_path = _resize_if_needed(image_path)
     b64_data, media_type = _image_to_b64(image_path)
