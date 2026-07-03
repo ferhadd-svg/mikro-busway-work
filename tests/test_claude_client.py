@@ -1,26 +1,25 @@
 import tempfile
 import unittest
-from pathlib import Path
 from unittest.mock import patch
+from pathlib import Path
 
-from app.services.openai_client import (
-    OpenAIConfigurationError,
-    OpenAIFileError,
-    create_response,
+from app.services.claude_client import (
+    ClaudeConfigurationError,
+    ClaudeFileError,
+    create_message,
     file_content_block,
 )
 
 
-class OpenAIClientTests(unittest.TestCase):
-    def test_pdf_is_encoded_as_input_file(self):
+class ClaudeClientTests(unittest.TestCase):
+    def test_pdf_is_encoded_as_document(self):
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as file_handle:
             file_handle.write(b"%PDF-1.4 test")
             path = Path(file_handle.name)
         try:
             block = file_content_block(path)
-            self.assertEqual(block["type"], "input_file")
-            self.assertEqual(block["filename"], path.name)
-            self.assertTrue(block["file_data"].startswith("data:application/pdf;base64,"))
+            self.assertEqual(block["type"], "document")
+            self.assertEqual(block["source"]["media_type"], "application/pdf")
         finally:
             path.unlink(missing_ok=True)
 
@@ -28,7 +27,7 @@ class OpenAIClientTests(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as file_handle:
             path = Path(file_handle.name)
         try:
-            with self.assertRaises(OpenAIFileError):
+            with self.assertRaises(ClaudeFileError):
                 file_content_block(path)
         finally:
             path.unlink(missing_ok=True)
@@ -38,18 +37,18 @@ class OpenAIClientTests(unittest.TestCase):
             status_code = 401
             request_id = "test-request"
 
-        class Responses:
+        class Messages:
             def create(self, **kwargs):
                 raise AuthenticationError("invalid key")
 
         class Client:
-            responses = Responses()
+            messages = Messages()
 
-        with patch("app.services.openai_client.get_client", return_value=Client()):
+        with patch("app.services.claude_client.get_client", return_value=Client()):
             with self.assertRaisesRegex(
-                OpenAIConfigurationError, "rejected the API key"
+                ClaudeConfigurationError, "rejected the API key"
             ):
-                create_response(prompt="test")
+                create_message(prompt="test")
 
 
 if __name__ == "__main__":
