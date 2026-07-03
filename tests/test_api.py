@@ -19,14 +19,14 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("api_key", response.json())
 
-    def test_missing_openai_key_returns_503(self):
-        original_key = settings.openai_api_key
-        settings.openai_api_key = ""
+    def test_missing_claude_key_returns_503(self):
+        original_key = settings.anthropic_api_key
+        settings.anthropic_api_key = ""
         try:
             with TestClient(app) as client:
                 response = client.post("/ai/test-connection")
         finally:
-            settings.openai_api_key = original_key
+            settings.anthropic_api_key = original_key
         self.assertEqual(response.status_code, 503)
 
 
