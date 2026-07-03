@@ -1,4 +1,4 @@
-"""OpenAI API status, authentication test, and general file analysis."""
+"""Claude API status, authentication test, and general file analysis."""
 
 import logging
 import tempfile
@@ -8,19 +8,19 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
-from app.services.openai_client import (
+from app.services.claude_client import (
     SUPPORTED_FILE_SUFFIXES,
-    OpenAIConfigurationError,
-    OpenAIError,
-    OpenAIFileError,
-    create_response,
+    ClaudeConfigurationError,
+    ClaudeError,
+    ClaudeFileError,
+    create_message,
     is_configured,
     ping,
 )
 from app.services.file_text import SUPPORTED_TEXT_SUFFIXES, extract_text
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/ai", tags=["OpenAI"])
+router = APIRouter(prefix="/ai", tags=["Claude AI"])
 ALL_SUPPORTED_SUFFIXES = SUPPORTED_FILE_SUFFIXES | SUPPORTED_TEXT_SUFFIXES
 
 
@@ -28,8 +28,7 @@ ALL_SUPPORTED_SUFFIXES = SUPPORTED_FILE_SUFFIXES | SUPPORTED_TEXT_SUFFIXES
 def ai_status():
     return {
         "configured": is_configured(),
-        "provider": "openai",
-        "model": settings.openai_model,
+        "model": settings.claude_model,
         "supported_file_types": sorted(ALL_SUPPORTED_SUFFIXES),
     }
 
@@ -38,9 +37,9 @@ def ai_status():
 def test_connection():
     try:
         result = ping()
-    except OpenAIConfigurationError as exc:
+    except ClaudeConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except OpenAIError as exc:
+    except ClaudeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return {
@@ -86,20 +85,20 @@ async def analyze_file(
             if not extracted.strip():
                 raise HTTPException(422, "No readable text was found in the file.")
             full_prompt = f"{prompt.strip()}\n\nExtracted file contents:\n{extracted}"
-            result = await run_in_threadpool(create_response, prompt=full_prompt)
+            result = await run_in_threadpool(create_message, prompt=full_prompt)
         else:
             result = await run_in_threadpool(
-                create_response,
+                create_message,
                 prompt=prompt,
                 file_path=temp_path,
             )
     except HTTPException:
         raise
-    except OpenAIConfigurationError as exc:
+    except ClaudeConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except OpenAIFileError as exc:
+    except ClaudeFileError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except OpenAIError as exc:
+    except ClaudeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except (OSError, ValueError) as exc:
         logger.exception("File analysis preparation failed filename=%s", filename)
