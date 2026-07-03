@@ -1,7 +1,7 @@
 """
 Project workflow:
   1. POST /projects                       — create project record
-  2. POST /projects/{id}/drawing          — upload SLD, Claude reads it
+  2. POST /projects/{id}/drawing          — upload SLD, OpenAI reads it
   3. GET  /projects/{id}/flags            — get list of flagged items needing answers
   4. POST /projects/{id}/flags            — submit flag answers (LME, earth%, etc.)
   5. POST /projects/{id}/generate-boq     — produce BOQ Excel
@@ -25,10 +25,10 @@ from app.models.salesperson import Salesperson
 from app.schemas.project import ProjectCreate, ProjectOut
 from app.schemas.boq import DrawingExtraction, FlagAnswers, BOQResponse
 from app.services.drawing_reader import read_drawing
-from app.services.claude_client import (
-    ClaudeConfigurationError,
-    ClaudeError,
-    ClaudeFileError,
+from app.services.openai_client import (
+    OpenAIConfigurationError,
+    OpenAIError,
+    OpenAIFileError,
 )
 from app.services.price_list import price_list
 from app.services.boq_builder import build_boq
@@ -68,7 +68,7 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
 
 
 # ------------------------------------------------------------------ #
-#  Step 2 — Upload drawing and have Claude read it                    #
+#  Step 2 — Upload drawing and have OpenAI read it                    #
 # ------------------------------------------------------------------ #
 
 @router.post("/{project_id}/drawing")
@@ -102,15 +102,15 @@ async def upload_drawing(
         extraction: DrawingExtraction = await run_in_threadpool(
             read_drawing, drawing_path
         )
-    except ClaudeConfigurationError as exc:
+    except OpenAIConfigurationError as exc:
         project.status = "draft"
         db.commit()
         raise HTTPException(503, str(exc)) from exc
-    except ClaudeFileError as exc:
+    except OpenAIFileError as exc:
         project.status = "draft"
         db.commit()
         raise HTTPException(400, str(exc)) from exc
-    except ClaudeError as exc:
+    except OpenAIError as exc:
         project.status = "draft"
         db.commit()
         raise HTTPException(502, str(exc)) from exc
@@ -147,7 +147,7 @@ def submit_runs_manually(
     db: Session = Depends(get_db),
 ):
     """
-    Submit busway run data manually (no drawing / no Claude needed).
+    Submit busway run data manually (no drawing / no OpenAI needed).
     Each run must include: run_id, run_type, rating_a, material, earth_pct,
     routing, length_m, piu_ratings. frame_rating_a is computed automatically.
     """
