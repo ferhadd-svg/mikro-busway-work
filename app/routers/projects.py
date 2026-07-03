@@ -11,11 +11,12 @@ Project workflow:
 """
 
 import json
-import shutil
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -24,12 +25,18 @@ from app.models.salesperson import Salesperson
 from app.schemas.project import ProjectCreate, ProjectOut
 from app.schemas.boq import DrawingExtraction, FlagAnswers, BOQResponse
 from app.services.drawing_reader import read_drawing
+from app.services.claude_client import (
+    ClaudeConfigurationError,
+    ClaudeError,
+    ClaudeFileError,
+)
 from app.services.price_list import price_list
 from app.services.boq_builder import build_boq
 from app.services.quotation_builder import build_quotation
 from app.config import settings
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
+logger = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------------ #
@@ -73,27 +80,45 @@ async def upload_drawing(
     project = _get_or_404(project_id, db)
 
     allowed = (".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff")
-    suffix = Path(file.filename).suffix.lower()
+    filename = Path(file.filename or "drawing").name
+    suffix = Path(filename).suffix.lower()
     if suffix not in allowed:
         raise HTTPException(400, f"Unsupported file type '{suffix}'. Allowed: {', '.join(allowed)}")
 
-    # Save drawing
-    drawing_path = _project_dir(project_id) / file.filename
-    with open(drawing_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
+    content = await file.read(settings.max_upload_bytes + 1)
+    if not content:
+        raise HTTPException(400, "Uploaded drawing is empty.")
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(413, "Uploaded drawing exceeds the configured size limit.")
 
-    project.drawing_filename = file.filename
+    drawing_path = _project_dir(project_id) / filename
+    drawing_path.write_bytes(content)
+
+    project.drawing_filename = filename
     project.status = "reading_drawing"
     db.commit()
 
-    # Call Claude
     try:
-        extraction: DrawingExtraction = read_drawing(drawing_path)
-    except Exception as e:
+        extraction: DrawingExtraction = await run_in_threadpool(
+            read_drawing, drawing_path
+        )
+    except ClaudeConfigurationError as exc:
         project.status = "draft"
         db.commit()
-        raise HTTPException(500, f"Drawing read failed: {e}")
+        raise HTTPException(503, str(exc)) from exc
+    except ClaudeFileError as exc:
+        project.status = "draft"
+        db.commit()
+        raise HTTPException(400, str(exc)) from exc
+    except ClaudeError as exc:
+        project.status = "draft"
+        db.commit()
+        raise HTTPException(502, str(exc)) from exc
+    except Exception as exc:
+        project.status = "draft"
+        db.commit()
+        logger.exception("Unexpected drawing read failure project_id=%s", project_id)
+        raise HTTPException(500, "Drawing read failed unexpectedly.") from exc
 
     project.drawing_extraction_json = extraction.model_dump_json()
     project.status = "flags_pending"
@@ -342,13 +367,17 @@ def assign_salesperson(project_id: int, sp_id: int, db: Session = Depends(get_db
 
 @router.post("/templates/upload")
 async def upload_template(file: UploadFile = File(...)):
-    if not file.filename.endswith((".xlsx", ".xls")):
+    filename = Path(file.filename or "template").name
+    if Path(filename).suffix.lower() not in (".xlsx", ".xls"):
         raise HTTPException(400, "Only .xlsx or .xls templates accepted.")
-    dest = settings.templates_dir / file.filename
-    with open(dest, "wb") as f:
-        content = await file.read()
-        f.write(content)
-    return {"message": f"Template '{file.filename}' uploaded.", "path": str(dest)}
+    content = await file.read(settings.max_upload_bytes + 1)
+    if not content:
+        raise HTTPException(400, "Uploaded template is empty.")
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(413, "Uploaded template exceeds the configured size limit.")
+    dest = settings.templates_dir / filename
+    dest.write_bytes(content)
+    return {"message": f"Template '{filename}' uploaded.", "path": str(dest)}
 
 
 # ------------------------------------------------------------------ #
