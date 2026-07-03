@@ -217,15 +217,41 @@ def read_drawing(drawing_path: Path) -> DrawingExtraction:
             f"or use Manual Entry mode. Details: {e.message}"
         )
 
-    raw_text = message.content[0].text.strip()
+    # Pull the text block out of the response (guard against empty/other blocks)
+    raw_text = ""
+    for block in message.content:
+        if getattr(block, "type", None) == "text":
+            raw_text = block.text
+            break
+    raw_text = raw_text.strip()
 
-    # Strip accidental markdown fences
+    # Strip accidental markdown fences (``` or ```json ... ```)
     if raw_text.startswith("```"):
-        raw_text = "\n".join(raw_text.split("\n")[1:])
-    if raw_text.endswith("```"):
-        raw_text = "\n".join(raw_text.split("\n")[:-1])
+        lines = raw_text.split("\n")[1:]                 # drop opening ``` / ```json
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]                           # drop closing ```
+        raw_text = "\n".join(lines).strip()
 
-    data = json.loads(raw_text)
+    # Parse JSON. If the model wrapped it in prose, extract the {...} object.
+    data = None
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError:
+        start, end = raw_text.find("{"), raw_text.rfind("}")
+        if start != -1 and end > start:
+            try:
+                data = json.loads(raw_text[start:end + 1])
+            except json.JSONDecodeError:
+                data = None
+
+    if not isinstance(data, dict):
+        snippet = raw_text[:300] if raw_text else "(empty response)"
+        raise RuntimeError(
+            "Claude could not turn this drawing into structured data. This usually "
+            "means the drawing was unclear, too low-resolution, or not a single-line "
+            "diagram. Try a clearer or larger image, or use Manual Entry. "
+            f"[Claude replied: {snippet}]"
+        )
 
     # Ensure frame_rating_a is set correctly
     runs = []

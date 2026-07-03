@@ -93,7 +93,8 @@ async def upload_drawing(
     except Exception as e:
         project.status = "draft"
         db.commit()
-        raise HTTPException(500, f"Drawing read failed: {e}")
+        # The UI already prefixes "Drawing read failed:", so pass the raw reason.
+        raise HTTPException(500, str(e))
 
     project.drawing_extraction_json = extraction.model_dump_json()
     project.status = "flags_pending"
