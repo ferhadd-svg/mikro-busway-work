@@ -1,13 +1,13 @@
 # Mikro Busway Quotation Engine
 
-A local API server that turns an SLD drawing into a priced busway BOQ and quotation — automatically, using Claude AI.
+A local API server that turns an SLD drawing into a priced busway BOQ and quotation — automatically, using OpenAI.
 
 ---
 
 ## What it does
 
 ```
-Upload SLD drawing  →  Claude reads it (two-pass)  →  Review flags  →  BOQ Excel  →  Quotation Excel
+Upload SLD drawing  →  OpenAI reads it (two-pass)  →  Review flags  →  BOQ Excel  →  Quotation Excel
 ```
 
 - Any salesperson (including newcomers) opens a browser, uploads a drawing, confirms a few values (LME rate, any missing lengths), and downloads finished Excel files.
@@ -40,9 +40,9 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Open `.env` and add your Anthropic API key:
+Open `.env` and add your OpenAI API key:
 ```
-ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
 ```
 
 Get an API key from https://console.anthropic.com
@@ -77,7 +77,7 @@ Open your browser at: **http://localhost:8000**
 2. Click **+ New Project**.
 3. Fill in: Our Ref, Client Name, Attn, M&E, and select your name.
 4. Upload the SLD drawing (PDF, PNG, or JPG).
-5. Wait ~20 seconds — Claude reads the drawing automatically.
+5. Wait ~20 seconds — OpenAI reads the drawing automatically.
 6. Review the flagged items. Enter the **LME rate** and **USD→MYR rate** (required every time). Fill in any missing feeder lengths.
 7. Click **Confirm & Continue** → **Generate BOQ** → **Generate Quotation**.
 8. Download the Excel files.
@@ -96,7 +96,7 @@ Open the **Admin** tab to:
 On Windows, create a batch file `start_server.bat`:
 ```bat
 @echo off
-set ANTHROPIC_API_KEY=sk-ant-...
+set OPENAI_API_KEY=sk-...
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 pause
 ```
@@ -121,7 +121,7 @@ Interactive API docs (for developers): **http://localhost:8000/docs**
 | Step | Endpoint | Description |
 |---|---|---|
 | 1 | `POST /projects/` | Create project record |
-| 2 | `POST /projects/{id}/drawing` | Upload SLD → Claude reads it |
+| 2 | `POST /projects/{id}/drawing` | Upload SLD → OpenAI reads it |
 | 3 | `GET /projects/{id}/flags` | See what needs confirmation |
 | 4 | `POST /projects/{id}/flags` | Submit LME + flag answers |
 | 5 | `POST /projects/{id}/generate-boq` | Generate BOQ Excel |
@@ -155,7 +155,7 @@ app/
   schemas/              ← Pydantic data shapes
   routers/              ← API endpoints
   services/
-    drawing_reader.py   ← Claude vision (two-pass SLD read)
+    drawing_reader.py   ← OpenAI vision (two-pass SLD read)
     price_list.py       ← Rate lookups
     boq_builder.py      ← BOQ Excel generator
     quotation_builder.py← Quotation Excel generator
@@ -184,3 +184,4 @@ curl -X POST http://localhost:8000/salespeople/ \
   -H "Content-Type: application/json" \
   -d '{"name":"Ahmad Fariz","title":"Sales Engineer","mobile":"+60 12-345 6789","email":"ahmad@mikro.com.my"}'
 ```
+\n\n## Production deployment\n\nSee [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for GitHub, Render, environment, OpenAI authentication, and verification steps.\n
