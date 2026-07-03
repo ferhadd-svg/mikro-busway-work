@@ -148,30 +148,48 @@ def read_drawing(drawing_path: Path) -> DrawingExtraction:
         )
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
-    message = client.messages.create(
-        model=settings.claude_model,
-        max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": b64_data,
+    try:
+        message = client.messages.create(
+            model=settings.claude_model,
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": b64_data,
+                            },
                         },
-                    },
-                    {
-                        "type": "text",
-                        "text": "Read this single-line drawing and extract all busway runs using the two-pass method. Return the JSON object.",
-                    },
-                ],
-            }
-        ],
-    )
+                        {
+                            "type": "text",
+                            "text": "Read this single-line drawing and extract all busway runs using the two-pass method. Return the JSON object.",
+                        },
+                    ],
+                }
+            ],
+        )
+    except anthropic.AuthenticationError:
+        raise RuntimeError(
+            "Anthropic rejected the API key (invalid key). In Render, open the "
+            "work-16 service > Environment and set ANTHROPIC_API_KEY to a valid key "
+            "from console.anthropic.com (paste the whole key, no spaces or quotes). "
+            "Or switch to Manual Entry mode, which needs no API key."
+        )
+    except anthropic.RateLimitError:
+        raise RuntimeError(
+            "Anthropic returned a rate-limit / no-credit error. Add billing credit at "
+            "console.anthropic.com > Billing, then try again. Or use Manual Entry mode."
+        )
+    except anthropic.APIStatusError as e:
+        raise RuntimeError(
+            f"Anthropic API error ({e.status_code}). Please try again shortly, "
+            f"or use Manual Entry mode. Details: {e.message}"
+        )
 
     raw_text = message.content[0].text.strip()
 
