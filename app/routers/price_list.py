@@ -1,7 +1,6 @@
-import shutil
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.config import settings
@@ -22,31 +21,44 @@ def get_price_list_info():
     return PriceListInfo(
         loaded=price_list.is_loaded(),
         filename=Path(price_list.loaded_file()).name if price_list.loaded_file() else None,
-        available_files=[f.name for f in files if f.suffix in (".xls", ".xlsx")],
+        available_files=[
+            file.name for file in files if file.suffix.lower() in (".xls", ".xlsx")
+        ],
     )
 
 
 @router.post("/upload", status_code=201)
 async def upload_price_list(file: UploadFile = File(...)):
-    """Upload a new price list (.xls or .xlsx). Becomes active immediately."""
-    if not file.filename.endswith((".xls", ".xlsx")):
+    filename = Path(file.filename or "price-list").name
+    if Path(filename).suffix.lower() not in (".xls", ".xlsx"):
         raise HTTPException(400, "Only .xls or .xlsx files are accepted.")
-    dest = settings.price_list_dir / file.filename
-    with open(dest, "wb") as f:
-        content = await file.read()
-        f.write(content)
-    price_list.load(dest)
-    return {"message": f"Price list '{file.filename}' loaded successfully."}
+
+    content = await file.read(settings.max_upload_bytes + 1)
+    if not content:
+        raise HTTPException(400, "Uploaded price list is empty.")
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(413, "Uploaded price list exceeds the configured size limit.")
+
+    destination = settings.price_list_dir / filename
+    destination.write_bytes(content)
+    try:
+        price_list.load(destination)
+    except Exception as exc:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(422, "The uploaded spreadsheet is not a valid price list.") from exc
+    return {"message": f"Price list '{filename}' loaded successfully."}
 
 
 @router.post("/activate/{filename}")
 def activate_price_list(filename: str):
-    """Switch to a previously uploaded price list file."""
-    path = settings.price_list_dir / filename
-    if not path.exists():
-        raise HTTPException(404, f"File '{filename}' not found.")
+    safe_filename = Path(filename).name
+    if safe_filename != filename:
+        raise HTTPException(400, "Invalid filename.")
+    path = settings.price_list_dir / safe_filename
+    if path.suffix.lower() not in (".xls", ".xlsx") or not path.is_file():
+        raise HTTPException(404, f"File '{safe_filename}' not found.")
     price_list.load(path)
-    return {"message": f"'{filename}' is now the active price list."}
+    return {"message": f"'{safe_filename}' is now the active price list."}
 
 
 @router.get("/lookup/feeder")
@@ -63,4 +75,4 @@ def lookup_piu(rating_a: int, ka: int = 26):
 
 def _require_loaded():
     if not price_list.is_loaded():
-        raise HTTPException(503, "No price list loaded. Upload one via POST /price-list/upload.")
+        raise HTTPException(503, "No price list loaded. Upload one first.")
