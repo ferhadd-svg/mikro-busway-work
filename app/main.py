@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import Base, engine
 from app.routers import ai, price_list as price_list_router, projects, salespeople
-from app.services.claude_client import is_configured
+from app.services.openai_client import is_configured
 from app.services.price_list import price_list
 
 logging.basicConfig(
@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("No price list found; upload one at POST /price-list/upload")
     logger.info(
-        "Application started environment=%s claude_configured=%s",
+        "Application started environment=%s openai_configured=%s",
         settings.app_env,
         is_configured(),
     )
@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Mikro Busway Quotation Engine",
     description="Turn an SLD drawing into a BOQ and priced quotation.",
-    version="1.1.0",
+    version="1.2.0",
     lifespan=lifespan,
 )
 
@@ -82,10 +82,11 @@ def health():
 def api_status():
     return {
         "service": "Mikro Busway Quotation Engine",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "environment": settings.app_env,
-        "claude_configured": is_configured(),
-        "claude_model": settings.claude_model,
+        "ai_provider": "openai",
+        "openai_configured": is_configured(),
+        "openai_model": settings.openai_model,
         "price_list_loaded": price_list.is_loaded(),
         "price_list_file": (
             Path(price_list.loaded_file()).name if price_list.loaded_file() else None
