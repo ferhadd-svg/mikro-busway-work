@@ -184,4 +184,3 @@ curl -X POST http://localhost:8000/salespeople/ \
   -H "Content-Type: application/json" \
   -d '{"name":"Ahmad Fariz","title":"Sales Engineer","mobile":"+60 12-345 6789","email":"ahmad@mikro.com.my"}'
 ```
-\n\n## Production deployment\n\nSee [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for GitHub, Render, environment, Claude authentication, and verification steps.\n

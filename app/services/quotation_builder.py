@@ -126,6 +126,7 @@ def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_
     Scan the template for known sentinel strings and replace them.
     Then inject item rows above the totals block.
     """
+    # Replace placeholder tokens
     _replace_tokens(ws, {
         "<<OUR_REF>>": our_ref,
         "<<CLIENT>>": client_name or "",
@@ -139,6 +140,7 @@ def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_
         "<<USD_MYR>>": f"USD 1 = RM {flags.usd_to_myr:.4f}",
     })
 
+    # Find the row that contains "SUB-TOTAL" or "SUBTOTAL"
     subtotal_row = None
     for row in ws.iter_rows():
         for cell in row:
@@ -150,9 +152,11 @@ def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_
             break
 
     if subtotal_row is None:
+        # Fallback: append items at the bottom
         _append_items(ws, runs, flags)
         return
 
+    # Find item start row (first blank row above subtotal that's below the header)
     insert_row = subtotal_row
     for r in range(subtotal_row - 1, 0, -1):
         all_empty = all(
@@ -186,6 +190,7 @@ def _insert_item_block(ws, runs: list[BOQRun], flags: FlagAnswers, start_row: in
     item_num = 1
 
     for run in runs:
+        # Section header
         ws.insert_rows(row)
         ws.merge_cells(f"A{row}:F{row}")
         c = ws.cell(row=row, column=1,
@@ -238,6 +243,7 @@ def _write_totals(ws, runs: list[BOQRun], subtotal_row: int):
         for cell in row:
             v = str(cell.value or "").upper()
             if "SUB-TOTAL" in v or "SUBTOTAL" in v:
+                # Amount is typically 2 cols to the right
                 ws.cell(row=cell.row, column=cell.column + 2).value = round(subtotal)
             if "SST" in v or "TAX" in v:
                 ws.cell(row=cell.row, column=cell.column + 2).value = sst
@@ -266,8 +272,8 @@ def _build_from_scratch(runs, flags, salesperson, our_ref, client_name, attn, me
     header_font = Font(bold=True, color="FFFFFF", size=12)
     bold = Font(bold=True)
 
-    ws.column_dimensions["A"].width = 20
-    ws.column_dimensions["B"].width = 60
+    ws.column_dimensions["A"].width = 8
+    ws.column_dimensions["B"].width = 50
     ws.column_dimensions["C"].width = 8
     ws.column_dimensions["D"].width = 10
     ws.column_dimensions["E"].width = 16
@@ -303,14 +309,14 @@ def _build_from_scratch(runs, flags, salesperson, our_ref, client_name, attn, me
     ws["D6"] = "Mobile:"
     ws["E6"] = salesperson.mobile
 
-    # Terms block (Manufacturer, Validity, Delivery, Price, Payment / Cancellation)
+    # Terms block (Manufacturer, Validity, Delivery, Price, Payment)
     row = 10
     label_font = Font(bold=True)
     for label, value in _terms_block(runs, flags):
         ws.cell(row=row, column=1, value=label).font = label_font
         c = ws.cell(row=row, column=2, value=value)
         c.alignment = Alignment(wrap_text=True)
-        ws.row_dimensions[row].height = 45 if value.count("\n") >= 2 else (30 if "\n" in value or len(value) > 80 else 15)
+        ws.row_dimensions[row].height = 30 if "\n" in value or len(value) > 80 else 15
         row += 1
 
     row += 1  # blank spacer
