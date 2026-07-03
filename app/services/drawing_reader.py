@@ -1,4 +1,4 @@
-"""Extract structured busway data from an SLD drawing with Claude."""
+"""Extract structured busway data from an SLD drawing with OpenAI."""
 
 import json
 import logging
@@ -6,7 +6,7 @@ from pathlib import Path
 
 from app.config import settings
 from app.schemas.boq import BusRun, DrawingExtraction
-from app.services.claude_client import ClaudeError, create_message
+from app.services.openai_client import OpenAIError, create_response
 from app.services.price_list import resolve_frame_rating
 
 logger = logging.getLogger(__name__)
@@ -27,18 +27,18 @@ Return only one valid JSON object matching the application schema. run_type must
 
 
 def read_drawing(drawing_path: Path) -> DrawingExtraction:
-    response = create_message(
+    response = create_response(
         prompt=(
             "Read this single-line drawing using the two-pass method. "
             "Extract every busway run and return only the required JSON object."
         ),
         system_prompt=SYSTEM_PROMPT,
         file_path=drawing_path,
-        max_tokens=settings.claude_max_tokens,
+        max_output_tokens=settings.openai_max_output_tokens,
     )
     raw_text = response["text"].strip()
     if not raw_text:
-        raise ClaudeError("Claude returned an empty drawing analysis.")
+        raise OpenAIError("OpenAI returned an empty drawing analysis.")
 
     try:
         data = _parse_json_object(raw_text)
@@ -54,11 +54,11 @@ def read_drawing(drawing_path: Path) -> DrawingExtraction:
         )
     except (json.JSONDecodeError, TypeError, ValueError, KeyError) as exc:
         logger.exception(
-            "Claude drawing response was invalid request_id=%s",
+            "OpenAI drawing response was invalid request_id=%s",
             response.get("request_id"),
         )
-        raise ClaudeError(
-            "Claude returned an invalid drawing analysis. Please try again."
+        raise OpenAIError(
+            "OpenAI returned an invalid drawing analysis. Please try again."
         ) from exc
 
 
@@ -78,5 +78,5 @@ def _parse_json_object(text: str) -> dict:
 
     parsed = json.loads(cleaned[start : end + 1])
     if not isinstance(parsed, dict):
-        raise TypeError("Claude response must be a JSON object")
+        raise TypeError("OpenAI response must be a JSON object")
     return parsed
