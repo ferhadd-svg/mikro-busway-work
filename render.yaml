@@ -15,20 +15,20 @@ services:
         value: INFO
       - key: CORS_ORIGINS
         value: https://work-16.onrender.com
-      - key: ANTHROPIC_API_KEY
+      - key: OPENAI_API_KEY
         sync: false
-      - key: CLAUDE_MODEL
-        value: claude-sonnet-5
-      - key: CLAUDE_MAX_TOKENS
+      - key: OPENAI_MODEL
+        value: gpt-5.5
+      - key: OPENAI_MAX_OUTPUT_TOKENS
         value: "4096"
-      - key: CLAUDE_TIMEOUT_SECONDS
+      - key: OPENAI_TIMEOUT_SECONDS
         value: "90"
-      - key: CLAUDE_MAX_RETRIES
+      - key: OPENAI_MAX_RETRIES
         value: "3"
-      - key: CLAUDE_MAX_FILE_BYTES
+      - key: OPENAI_MAX_FILE_BYTES
         value: "10485760"
-      - key: CLAUDE_MAX_IMAGE_PX
-        value: "2000"
+      - key: OPENAI_MAX_IMAGE_PX
+        value: "6000"
       - key: MAX_EXTRACTED_TEXT_CHARS
         value: "60000"
       - key: MAX_UPLOAD_BYTES
