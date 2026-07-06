@@ -1,3 +1,5 @@
+import re
+
 import openpyxl
 
 from app.schemas.boq import BOQLineItem, BOQRun, FlagAnswers
@@ -17,10 +19,12 @@ def _runs():
         routing="FROM TX TO MSB",
         run_type="TX-MSB",
         material="AL",
+        frame_rating_a=630,
+        earth_pct=50,
         items=[
-            BOQLineItem(description="Busway feeder 630A", unit="m", qty=10,
-                        unit_rate_myr=100.0, amount_myr=1000.0),
-            BOQLineItem(description="End closure 630A", unit="pc", qty=1,
+            BOQLineItem(description="FEEDER C/W INTEGRAL EARTH 500A (630A) 3P4W+50%E (ALUMINIUM)",
+                        unit="m", qty=10, unit_rate_myr=100.0, amount_myr=1000.0),
+            BOQLineItem(description="END CLOSURE (630A)", unit="No.", qty=1,
                         unit_rate_myr=500.0, amount_myr=500.0),
         ],
     )]
@@ -30,9 +34,17 @@ def _flags():
     return FlagAnswers(lme_usd_per_mt=2600.0, usd_to_myr=4.4500)
 
 
+def _find_row(ws, predicate):
+    for row in ws.iter_rows():
+        for c in row:
+            if predicate(c.value):
+                return c.row
+    return None
+
+
 def _template():
-    """Minimal stand-in for the Mikro salesperson template: token header,
-    item-table header, merged totals labels, merged remarks footer."""
+    """Minimal <<token>>-style template: item-table header at row 3
+    (amounts in F), merged totals labels, merged remarks footer."""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws["A1"] = "Our Ref: <<OUR_REF>>"
@@ -65,8 +77,7 @@ def test_fill_template_totals_and_merges():
     # Token replaced
     assert ws["A1"].value == "Our Ref: MK/Q/001"
 
-    # Labels still sit at the anchor of their (shifted) merged ranges,
-    # and the totals landed in the AMOUNT column on the same rows.
+    # Labels still sit at the anchor of their (shifted) merged ranges
     merged = {str(r) for r in ws.merged_cells.ranges}
     label_rows = {}
     for row in ws.iter_rows():
@@ -77,14 +88,18 @@ def test_fill_template_totals_and_merges():
                 assert f"A{cell.row}:D{cell.row}" in merged, \
                     f"merge for '{v}' not aligned with its row {cell.row}"
 
-    assert ws.cell(row=label_rows["SUB-TOTAL"], column=6).value == 1500
-    assert ws.cell(row=label_rows["10% SST"], column=6).value == 150
-    assert ws.cell(row=label_rows["GRAND TOTAL"], column=6).value == 1650
+    # Totals wired as formulas in the AMOUNT column (F): sub-total sums the
+    # per-run sum row directly above it, SST and grand chain off it.
+    sub_r, sst_r, grand_r = (label_rows["SUB-TOTAL"], label_rows["10% SST"],
+                             label_rows["GRAND TOTAL"])
+    assert ws.cell(row=sub_r, column=6).value == f"=SUM(F{sub_r - 1})"
+    assert ws.cell(row=sst_r, column=6).value == f"=F{sub_r}*10%"
+    assert ws.cell(row=grand_r, column=6).value == f"=SUM(F{sub_r},F{sst_r})"
 
-    # Item rows were written with description and amount
-    descriptions = [c.value for row in ws.iter_rows() for c in row
-                    if c.value == "Busway feeder 630A"]
-    assert descriptions, "item row missing from filled template"
+    # Component line: shortened description, =QTY*RATE formula in F
+    feeder_row = _find_row(ws, lambda v: v == "FEEDER C/W INTEGRAL EARTH")
+    assert feeder_row is not None
+    assert ws.cell(row=feeder_row, column=6).value == f"=D{feeder_row}*E{feeder_row}"
 
 
 def _eric_style_template():
@@ -112,7 +127,7 @@ def _eric_style_template():
     ws["H22"] = "=SUM(H20)"
     ws["G23"] = "10% SST  :"; ws["H23"] = "=SUM(H22*10%)"
     ws.merge_cells("B24:G24")
-    ws["B24"] = "Grand Total Amount for Item No. 1 , Ex-Nilai Factory in RM  :"
+    ws["B24"] = "Grand Total Amount for Item No. 1 to 2 , Ex-Nilai Factory in RM  :"
     ws["H24"] = "=SUM(H22,H23)"
     ws["B26"] = "Remarks :"
     ws["B27"] = "1. The quantities quoted are rough estimation only. Final busway amount shall based on the actual"
@@ -130,64 +145,83 @@ def test_fill_real_style_template():
     assert ws["B9"].value == ": Mr. Lim"
     assert ws["A14"].value.endswith("MK/Q/2026/001")
     assert ws["G14"].value.endswith("XYZ Consult")
-    import re
     assert re.fullmatch(r": \d{2}-\d{2}-\d{4}", str(ws["F8"].value))  # ": <date>" filled
 
     # Sample items removed
     all_text = [str(c.value) for row in ws.iter_rows() for c in row if c.value]
     assert not any("SAMPLE" in t for t in all_text)
 
-    # Items written into the template's own columns: qty E, unit F, rate G, amount H
-    feeder_row = next(c.row for row in ws.iter_rows() for c in row
-                      if c.value == "Busway feeder 630A")
-    assert ws.cell(row=feeder_row, column=5).value == 10       # Quantity
-    assert ws.cell(row=feeder_row, column=6).value == "m"      # Unit
-    assert ws.cell(row=feeder_row, column=7).value == 100.0    # Unit Rate
-    assert ws.cell(row=feeder_row, column=8).value == 1000.0   # Total Amount
+    # House format: run number in A + spec title in B, routing on next row
+    title_row = _find_row(ws, lambda v: isinstance(v, str) and v.startswith("MIKRO BUSWAY #"))
+    assert title_row is not None
+    assert ws.cell(row=title_row, column=1).value == 1
+    assert ws.cell(row=title_row, column=2).value == \
+        "MIKRO BUSWAY # 630A TPNE, 3P4W+50%E, 600VAC, 50Hz (ALUMINIUM) - IP54"
+    assert ws.cell(row=title_row + 1, column=2).value == "FROM TX TO MSB"
 
-    # Totals in column H on the shifted label rows; merges still aligned
+    # Component line in the template's own columns with =E*G formula,
+    # description shortened (title already carries the spec)
+    feeder_row = _find_row(ws, lambda v: v == "FEEDER C/W INTEGRAL EARTH")
+    assert ws.cell(row=feeder_row, column=5).value == 10       # Quantity (E)
+    assert ws.cell(row=feeder_row, column=6).value == "m"      # Unit (F)
+    assert ws.cell(row=feeder_row, column=7).value == 100.0    # Unit Rate (G)
+    assert ws.cell(row=feeder_row, column=8).value == f"=E{feeder_row}*G{feeder_row}"
+
+    # Per-run sum row directly under the run's last component
+    end_closure_row = _find_row(ws, lambda v: v == "END CLOSURE")
+    sum_row = end_closure_row + 1
+    assert ws.cell(row=sum_row, column=8).value == f"=SUM(H{feeder_row}:H{end_closure_row})"
+
+    # Totals chained off the per-run sums; merges still aligned
     merged = {str(r) for r in ws.merged_cells.ranges}
-    sub_row = next(c.row for row in ws.iter_rows() for c in row
-                   if str(c.value or "").startswith("Sub-Total"))
-    sst_row = next(c.row for row in ws.iter_rows() for c in row
-                   if str(c.value or "").startswith("10% SST"))
-    grand_row = next(c.row for row in ws.iter_rows() for c in row
-                     if str(c.value or "").startswith("Grand Total"))
-    assert ws.cell(row=sub_row, column=8).value == 1500
-    assert ws.cell(row=sst_row, column=8).value == 150
-    assert ws.cell(row=grand_row, column=8).value == 1650
+    sub_row = _find_row(ws, lambda v: str(v or "").startswith("Sub-Total"))
+    sst_row = _find_row(ws, lambda v: str(v or "").startswith("10% SST"))
+    grand_row = _find_row(ws, lambda v: str(v or "").startswith("Grand Total"))
+    assert ws.cell(row=sub_row, column=8).value == f"=SUM(H{sum_row})"
+    assert ws.cell(row=sst_row, column=8).value == f"=H{sub_row}*10%"
+    assert ws.cell(row=grand_row, column=8).value == f"=SUM(H{sub_row},H{sst_row})"
     assert f"F{sub_row}:G{sub_row}" in merged
     assert f"B{grand_row}:G{grand_row}" in merged
 
+    # Grand-total label refreshed for the actual run count (1 run here)
+    grand_label = ws.cell(row=grand_row, column=2).value
+    assert "Item No. 1 ," in grand_label
+    assert "1 to 2" not in grand_label
+
     # Remarks survive below the totals
-    assert any(str(c.value or "").startswith("Remarks") for row in ws.iter_rows() for c in row)
+    assert any(str(c.value or "").startswith("Remarks")
+               for row in ws.iter_rows() for c in row)
 
 
 def test_multiple_runs_all_land_above_subtotal():
     wb, ws = _eric_style_template()
     runs = [_runs()[0],
             BOQRun(run_id="RUN-2", routing="FROM MSB TO L5", run_type="MSB-Riser",
-                   material="CU",
-                   items=[BOQLineItem(description="Busway riser 800A", unit="m",
-                                      qty=20, unit_rate_myr=200.0, amount_myr=4000.0)])]
+                   material="CU", frame_rating_a=800, earth_pct=100,
+                   items=[BOQLineItem(description="FEEDER C/W INTEGRAL EARTH 800A",
+                                      unit="m", qty=20, unit_rate_myr=200.0,
+                                      amount_myr=4000.0)],
+                   piu_items=[BOQLineItem(description="250A TPN MCCB (HYUNDAI)",
+                                          unit="No.", qty=2, unit_rate_myr=3000.0,
+                                          amount_myr=6000.0)])]
     _fill_template(ws, runs, _flags(), FakeSalesperson(),
                    our_ref="X", client_name="Y", attn=None, me_consultant=None)
-    sub_row = next(c.row for row in ws.iter_rows() for c in row
-                   if str(c.value or "").startswith("Sub-Total"))
-    riser_row = next(c.row for row in ws.iter_rows() for c in row
-                     if c.value == "Busway riser 800A")
-    assert riser_row < sub_row, "second run leaked below the SUB-TOTAL row"
-    assert ws.cell(row=sub_row, column=8).value == 1500 + 4000
 
+    sub_row = _find_row(ws, lambda v: str(v or "").startswith("Sub-Total"))
+    riser_title_row = _find_row(
+        ws, lambda v: isinstance(v, str) and v.startswith("MIKRO BUSWAY # 800A"))
+    assert riser_title_row is not None
+    assert riser_title_row < sub_row, "second run leaked below the SUB-TOTAL row"
+    assert ws.cell(row=riser_title_row, column=1).value == 2  # numbered as item 2
 
-def test_grand_total_equals_displayed_subtotal_plus_sst():
-    wb, ws = _template()
-    _fill_template(ws, _runs(), _flags(), FakeSalesperson(),
-                   our_ref="X", client_name="Y", attn=None, me_consultant=None)
-    values = {}
-    for row in ws.iter_rows():
-        for cell in row:
-            v = str(cell.value or "")
-            if v.startswith(("SUB-TOTAL", "10% SST", "GRAND TOTAL")):
-                values[v.split(" (")[0]] = ws.cell(row=cell.row, column=6).value
-    assert values["GRAND TOTAL"] == values["SUB-TOTAL"] + values["10% SST"]
+    # Sub-total sums both per-run sum rows
+    sub_formula = str(ws.cell(row=sub_row, column=8).value)
+    assert sub_formula.startswith("=SUM(") and sub_formula.count("H") == 2
+
+    # Grand-total label refreshed to "1 to 2"
+    grand_row = _find_row(ws, lambda v: str(v or "").startswith("Grand Total"))
+    assert "Item No. 1 to 2" in ws.cell(row=grand_row, column=2).value
+
+    # PIU section label present within the run block
+    piu_row = _find_row(ws, lambda v: v == "PLUG-IN UNITS (PIU) :")
+    assert piu_row is not None and piu_row < sub_row

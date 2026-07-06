@@ -187,6 +187,9 @@ def build_boq(
             material=run.material,
             items=items,
             piu_items=piu_items,
+            frame_rating_a=run.frame_rating_a,
+            earth_pct=run.earth_pct,
+            phases=run.phases,
         ))
 
     subtotal = sum(

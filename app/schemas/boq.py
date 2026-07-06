@@ -49,6 +49,11 @@ class BOQRun(BaseModel):
     material: str
     items: list[BOQLineItem]
     piu_items: list[BOQLineItem] = []
+    # Carried through for the quotation's run title
+    # ("MIKRO BUSWAY # 630A TPNE, 3P4W+50%E, ..."):
+    frame_rating_a: int | None = None
+    earth_pct: int | None = None
+    phases: str = "3P4W"
 
 
 class BOQResponse(BaseModel):

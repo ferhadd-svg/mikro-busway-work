@@ -8,7 +8,7 @@ Template structure assumptions (Mikro standard):
   - Footer: remarks block + subtotal / SST / grand total + signatures
 """
 
-import copy
+import re
 from datetime import date
 from pathlib import Path
 
@@ -252,8 +252,8 @@ def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_
                 insert_row = r + 1
                 break
 
-    _insert_item_block(ws, runs, flags, insert_row, cols)
-    _write_totals(ws, runs, insert_row, (cols or {}).get("amount"))
+    sum_rows = _insert_item_block(ws, runs, flags, insert_row, cols)
+    _write_totals(ws, runs, insert_row, (cols or {}).get("amount"), sum_rows)
 
 
 def _insert_row(ws, row: int):
@@ -312,60 +312,100 @@ def _replace_tokens(ws, token_map: dict):
                         cell.value = cell.value.replace(token, value)
 
 
+def _run_title(run: BOQRun) -> str:
+    """Mikro house-format spec title, e.g.
+    'MIKRO BUSWAY # 5000A TPNE, 3P4W+100%E, 600VAC, 50Hz (COPPER) - IP54'."""
+    material = "ALUMINIUM" if run.material == "AL" else "COPPER"
+    if run.frame_rating_a and run.earth_pct:
+        return (f"MIKRO BUSWAY # {run.frame_rating_a}A TPNE, "
+                f"{run.phases}+{run.earth_pct}%E, 600VAC, 50Hz ({material}) - IP54")
+    return f"MIKRO BUSWAY — {run.run_id} ({run.run_type}, {material})"
+
+
+def _short_desc(desc: str, run: BOQRun | None) -> str:
+    """The run title already carries rating/earth/material, so drop the
+    repetition from component lines (house format)."""
+    if run is None or not run.frame_rating_a:
+        return desc
+    if desc.upper().startswith("FEEDER C/W INTEGRAL EARTH"):
+        return "FEEDER C/W INTEGRAL EARTH"
+    return desc.replace(f" ({run.frame_rating_a}A)", "")
+
+
+def _border_row(ws, row: int, cols: dict, border):
+    for col in range(1, cols["amount"] + 1):
+        ws.cell(row=row, column=col).border = border
+
+
 def _insert_item_block(ws, runs: list[BOQRun], flags: FlagAnswers, start_row: int,
-                       cols: dict | None = None):
+                       cols: dict | None = None) -> list[int]:
+    """Write the runs in the Mikro house format: item number = run number,
+    spec-title row, routing row, component lines with =qty*rate formulas,
+    then a per-run =SUM() amount row. Returns the per-run sum rows so the
+    totals block can reference them."""
     cols = cols or DEFAULT_COLS
     thin = Side(border_style="thin", color="000000")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
-    section_fill = PatternFill("solid", fgColor="D9E1F2")
-    section_font = Font(bold=True)
-    last_col = get_column_letter(cols["amount"])
+    amount_letter = get_column_letter(cols["amount"])
+    bold = Font(bold=True)
 
     row = start_row
-    item_num = 1
+    sum_rows: list[int] = []
 
-    for run in runs:
-        # Section header
+    for n, run in enumerate(runs, 1):
+        # Item number + spec title
         _insert_row(ws, row)
-        ws.merge_cells(f"A{row}:{last_col}{row}")
-        c = ws.cell(row=row, column=1,
-                    value=f"{run.run_id} — {run.routing} ({run.run_type}, {run.material})")
-        c.font = section_font
-        c.fill = section_fill
-        c.border = border
+        _border_row(ws, row, cols, border)
+        ws.cell(row=row, column=cols["no"], value=n).font = bold
+        ws.cell(row=row, column=cols["desc"], value=_run_title(run)).font = bold
         row += 1
 
+        # Routing line
+        _insert_row(ws, row)
+        _border_row(ws, row, cols, border)
+        ws.cell(row=row, column=cols["desc"], value=run.routing or "").font = bold
+        row += 1
+
+        first_amount_row = row
         for item in run.items:
             _insert_row(ws, row)
-            _write_quotation_row(ws, row, item_num, item, border, cols)
-            item_num += 1
+            _write_quotation_row(ws, row, item, border, cols, run)
             row += 1
 
         if run.piu_items:
             _insert_row(ws, row)
-            ws.merge_cells(f"A{row}:{last_col}{row}")
-            c = ws.cell(row=row, column=1, value="PIU — PLUG-IN UNITS")
+            _border_row(ws, row, cols, border)
+            c = ws.cell(row=row, column=cols["desc"], value="PLUG-IN UNITS (PIU) :")
             c.font = Font(italic=True, bold=True)
-            c.border = border
             row += 1
             for item in run.piu_items:
                 _insert_row(ws, row)
-                _write_quotation_row(ws, row, item_num, item, border, cols)
-                item_num += 1
+                _write_quotation_row(ws, row, item, border, cols, run)
                 row += 1
 
-        # Blank spacer — must be a real insertion, otherwise the pointer
-        # walks past the SUB-TOTAL row and later runs land below the totals.
+        # Per-run amount subtotal (house format: =SUM over the run's lines)
         _insert_row(ws, row)
+        _border_row(ws, row, cols, border)
+        c = ws.cell(row=row, column=cols["amount"],
+                    value=f"=SUM({amount_letter}{first_amount_row}:{amount_letter}{row - 1})")
+        c.font = bold
+        sum_rows.append(row)
         row += 1
 
+    return sum_rows
 
-def _write_quotation_row(ws, row: int, item_num: int, item: BOQLineItem, border,
-                         cols: dict | None = None):
+
+def _write_quotation_row(ws, row: int, item: BOQLineItem, border,
+                         cols: dict | None = None, run: BOQRun | None = None):
     cols = cols or DEFAULT_COLS
-    mapping = [("no", item_num), ("desc", item.description), ("unit", item.unit),
-               ("qty", item.qty), ("rate", item.unit_rate_myr), ("amount", item.amount_myr)]
+    mapping = [("desc", _short_desc(item.description, run)), ("unit", item.unit),
+               ("qty", item.qty), ("rate", item.unit_rate_myr)]
     values = {cols[key]: val for key, val in mapping if cols.get(key)}
+    if cols.get("qty"):
+        qty_l, rate_l = get_column_letter(cols["qty"]), get_column_letter(cols["rate"])
+        values[cols["amount"]] = f"={qty_l}{row}*{rate_l}{row}"
+    else:
+        values[cols["amount"]] = item.amount_myr
     right_cols = {cols.get("qty"), cols["rate"], cols["amount"]}
     for col in range(1, cols["amount"] + 1):
         c = ws.cell(row=row, column=col, value=values.get(col))
@@ -382,25 +422,53 @@ def _subtotal_sst_grand(runs: list[BOQRun]) -> tuple[int, int, int]:
     return subtotal, sst, subtotal + sst
 
 
-def _write_totals(ws, runs: list[BOQRun], min_row: int, amount_col: int | None = None):
+def _write_totals(ws, runs: list[BOQRun], min_row: int, amount_col: int | None = None,
+                  sum_rows: list[int] | None = None):
     subtotal, sst, grand_total = _subtotal_sst_grand(runs)
     # Write into the AMOUNT column when the template has one; otherwise fall
     # back to the historical assumption of two columns right of the label.
     if amount_col is None:
         amount_col = (_find_header_columns(ws) or {}).get("amount")
 
+    # Locate the three label cells first
+    sub_cell = sst_cell = grand_cell = None
     for row in ws.iter_rows(min_row=min_row):
         for cell in row:
             v = str(cell.value or "").upper()
-            value = None
-            if "SUB-TOTAL" in v or "SUBTOTAL" in v:
-                value = subtotal
-            elif "GRAND TOTAL" in v:
-                value = grand_total
-            elif "SST" in v or "TAX" in v:
-                value = sst
-            if value is not None:
-                ws.cell(row=cell.row, column=amount_col or (cell.column + 2)).value = value
+            if ("SUB-TOTAL" in v or "SUBTOTAL" in v) and sub_cell is None:
+                sub_cell = cell
+            elif "GRAND TOTAL" in v and grand_cell is None:
+                grand_cell = cell
+            elif ("SST" in v or "TAX" in v) and sst_cell is None:
+                sst_cell = cell
+
+    def _target(label_cell):
+        return ws.cell(row=label_cell.row, column=amount_col or (label_cell.column + 2))
+
+    # House format: live formulas chained off the per-run sum rows.
+    # Without a known amount column, fall back to literal values.
+    use_formulas = amount_col and sum_rows and sub_cell
+    letter = get_column_letter(amount_col) if amount_col else None
+
+    if sub_cell:
+        _target(sub_cell).value = (
+            f"=SUM({','.join(f'{letter}{r}' for r in sum_rows)})" if use_formulas else subtotal
+        )
+    if sst_cell:
+        _target(sst_cell).value = (
+            f"={letter}{sub_cell.row}*10%" if use_formulas and sst_cell else sst
+        )
+    if grand_cell:
+        _target(grand_cell).value = (
+            f"=SUM({letter}{sub_cell.row},{letter}{sst_cell.row})"
+            if use_formulas and sst_cell else grand_total
+        )
+        # Refresh "Item No. 1 to N" in the grand-total label
+        if isinstance(grand_cell.value, str):
+            n = len(runs)
+            replacement = "Item No. 1" if n == 1 else f"Item No. 1 to {n}"
+            grand_cell.value = re.sub(r"Item No\.?\s*1(\s*to\s*\d+)?", replacement,
+                                      grand_cell.value)
 
 
 def _append_items(ws, runs: list[BOQRun], flags: FlagAnswers):
