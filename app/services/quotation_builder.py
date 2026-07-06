@@ -15,6 +15,7 @@ from pathlib import Path
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.cell_range import CellRange
 
 from app.schemas.boq import BOQRun, BOQLineItem, FlagAnswers
 from app.models.salesperson import Salesperson
@@ -171,6 +172,33 @@ def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_
     _write_totals(ws, runs, subtotal_row)
 
 
+def _insert_row(ws, row: int):
+    """Insert one row, keeping merged cells aligned with their values.
+
+    openpyxl's insert_rows shifts cell values down but leaves merged ranges
+    at their old coordinates, so every merge at or below the insertion point
+    (the totals block, remarks, signature area at the end of the template)
+    drifts one row out of place per inserted item. Re-anchor them manually.
+    """
+    to_shift, to_expand = [], []
+    for rng in ws.merged_cells.ranges:
+        if rng.min_row >= row:
+            to_shift.append(str(rng))
+        elif rng.max_row >= row:
+            to_expand.append(str(rng))
+    for ref in to_shift + to_expand:
+        ws.unmerge_cells(ref)
+    ws.insert_rows(row)
+    for ref in to_shift:
+        r = CellRange(ref)
+        r.shift(row_shift=1)
+        ws.merge_cells(str(r))
+    for ref in to_expand:
+        r = CellRange(ref)
+        r.expand(down=1)
+        ws.merge_cells(str(r))
+
+
 def _replace_tokens(ws, token_map: dict):
     for row in ws.iter_rows():
         for cell in row:
@@ -191,7 +219,7 @@ def _insert_item_block(ws, runs: list[BOQRun], flags: FlagAnswers, start_row: in
 
     for run in runs:
         # Section header
-        ws.insert_rows(row)
+        _insert_row(ws, row)
         ws.merge_cells(f"A{row}:F{row}")
         c = ws.cell(row=row, column=1,
                     value=f"{run.run_id} — {run.routing} ({run.run_type}, {run.material})")
@@ -201,20 +229,20 @@ def _insert_item_block(ws, runs: list[BOQRun], flags: FlagAnswers, start_row: in
         row += 1
 
         for item in run.items:
-            ws.insert_rows(row)
+            _insert_row(ws, row)
             _write_quotation_row(ws, row, item_num, item, border)
             item_num += 1
             row += 1
 
         if run.piu_items:
-            ws.insert_rows(row)
+            _insert_row(ws, row)
             ws.merge_cells(f"A{row}:F{row}")
             c = ws.cell(row=row, column=1, value="PIU — PLUG-IN UNITS")
             c.font = Font(italic=True, bold=True)
             c.border = border
             row += 1
             for item in run.piu_items:
-                ws.insert_rows(row)
+                _insert_row(ws, row)
                 _write_quotation_row(ws, row, item_num, item, border)
                 item_num += 1
                 row += 1
@@ -232,29 +260,57 @@ def _write_quotation_row(ws, row: int, item_num: int, item: BOQLineItem, border)
             c.alignment = Alignment(horizontal="right")
 
 
-def _write_totals(ws, runs: list[BOQRun], subtotal_row: int):
-    subtotal = sum(
-        item.amount_myr for r in runs for item in (r.items + r.piu_items)
-    )
-    sst = round(subtotal * 0.10)
-    grand_total = round(subtotal + sst)
+def _amount_column(ws) -> int | None:
+    """Column of the 'AMOUNT (RM)' header in the item table, if present."""
+    for row in ws.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, str) and cell.value.strip().upper().startswith("AMOUNT"):
+                return cell.column
+    return None
 
-    for row in ws.iter_rows(min_row=subtotal_row):
+
+def _subtotal_sst_grand(runs: list[BOQRun]) -> tuple[int, int, int]:
+    subtotal = round(sum(
+        item.amount_myr for r in runs for item in (r.items + r.piu_items)
+    ))
+    sst = round(subtotal * 0.10)
+    return subtotal, sst, subtotal + sst
+
+
+def _write_totals(ws, runs: list[BOQRun], min_row: int):
+    subtotal, sst, grand_total = _subtotal_sst_grand(runs)
+    # Write into the AMOUNT column when the template has one; otherwise fall
+    # back to the historical assumption of two columns right of the label.
+    amount_col = _amount_column(ws)
+
+    for row in ws.iter_rows(min_row=min_row):
         for cell in row:
             v = str(cell.value or "").upper()
+            value = None
             if "SUB-TOTAL" in v or "SUBTOTAL" in v:
-                # Amount is typically 2 cols to the right
-                ws.cell(row=cell.row, column=cell.column + 2).value = round(subtotal)
-            if "SST" in v or "TAX" in v:
-                ws.cell(row=cell.row, column=cell.column + 2).value = sst
-            if "GRAND TOTAL" in v:
-                ws.cell(row=cell.row, column=cell.column + 2).value = grand_total
+                value = subtotal
+            elif "GRAND TOTAL" in v:
+                value = grand_total
+            elif "SST" in v or "TAX" in v:
+                value = sst
+            if value is not None:
+                ws.cell(row=cell.row, column=amount_col or (cell.column + 2)).value = value
 
 
 def _append_items(ws, runs: list[BOQRun], flags: FlagAnswers):
-    """Last-resort: write items at first empty row."""
+    """Last-resort: write items at first empty row, then a totals block."""
     max_row = ws.max_row + 2
     _insert_item_block(ws, runs, flags, max_row)
+
+    subtotal, sst, grand_total = _subtotal_sst_grand(runs)
+    bold = Font(bold=True)
+    row = ws.max_row + 1
+    for label, value in [("SUB-TOTAL (RM)", subtotal),
+                         ("10% SST (RM)", sst),
+                         ("GRAND TOTAL (RM)", grand_total)]:
+        ws.cell(row=row, column=5, value=label).font = bold
+        ws.cell(row=row, column=6, value=value).font = bold
+        row += 1
 
 
 # ------------------------------------------------------------------ #
@@ -331,14 +387,11 @@ def _build_from_scratch(runs, flags, salesperson, our_ref, client_name, attn, me
 
     _insert_item_block(ws, runs, flags, row)
 
-    subtotal = sum(item.amount_myr for r in runs for item in (r.items + r.piu_items))
+    subtotal, sst, grand = _subtotal_sst_grand(runs)
     end_row = ws.max_row + 2
 
-    sst = round(subtotal * 0.10)
-    grand = round(subtotal + sst)
-
     ws.cell(row=end_row, column=5, value="SUB-TOTAL (RM)").font = bold
-    ws.cell(row=end_row, column=6, value=round(subtotal)).font = bold
+    ws.cell(row=end_row, column=6, value=subtotal).font = bold
     end_row += 1
     ws.cell(row=end_row, column=5, value="10% SST (RM)").font = bold
     ws.cell(row=end_row, column=6, value=sst).font = bold
