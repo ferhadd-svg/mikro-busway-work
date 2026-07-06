@@ -1,9 +1,14 @@
 import re
+from datetime import date
 
 import openpyxl
 
 from app.schemas.boq import BOQLineItem, BOQRun, FlagAnswers
-from app.services.quotation_builder import _fill_template, _insert_row
+from app.services.quotation_builder import (
+    _fill_template,
+    _insert_row,
+    _refresh_lme_mentions,
+)
 
 
 class FakeSalesperson:
@@ -191,6 +196,63 @@ def test_fill_real_style_template():
     # Remarks survive below the totals
     assert any(str(c.value or "").startswith("Remarks")
                for row in ws.iter_rows() for c in row)
+
+
+def _add_lme_remarks(ws):
+    """Static remark/validity text as shipped in the real Eric template:
+    aluminium block in B/C, copper block in L/M, with the previous
+    quotation's LME rate and date hard-typed."""
+    ws["B28"] = "Validity"
+    ws["C28"] = ": Based on LME Alu.@USD3,666/MT and thereafter depands on current LME Aluminium price."
+    ws["B29"] = "3. The prices quoted are based on 05-06-2026 LME Aluminium @USD3,666/MT."
+    ws["M28"] = ": 3 days from date of quotation. Thereafter shall depands on LME Copper price."
+    ws["M29"] = ": 20% Deposit is required to secure LME Copper @ USD 13, 690/MT. "
+    ws["L30"] = "3.  The prices quoted are based on 18-06-2026 LME Copper @ USD 13,690/MT."
+    ws["L31"] = "NOTE : The prices quoted are based on Exchange Rate of USD 1.00 = RM 4.13"
+
+
+def test_refresh_lme_mentions_rewrites_rate_and_date():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    _add_lme_remarks(ws)
+    _refresh_lme_mentions(ws, _flags())
+    today = date.today().strftime("%d-%m-%Y")
+
+    # Aluminium block: rate swapped in-place, template's own spacing kept
+    assert ws["C28"].value == \
+        ": Based on LME Alu.@USD2,600/MT and thereafter depands on current LME Aluminium price."
+    assert ws["B29"].value == \
+        f"3. The prices quoted are based on {today} LME Aluminium @USD2,600/MT."
+
+    # Copper block: spaced style kept, stray space inside "13, 690" cleaned
+    assert ws["M29"].value == ": 20% Deposit is required to secure LME Copper @ USD 2,600/MT. "
+    assert ws["L30"].value == \
+        f"3.  The prices quoted are based on {today} LME Copper @ USD 2,600/MT."
+
+    # LME mention without a rate or date stays untouched
+    assert ws["M28"].value == \
+        ": 3 days from date of quotation. Thereafter shall depands on LME Copper price."
+    # Non-LME cell with a USD figure stays untouched
+    assert ws["L31"].value == \
+        "NOTE : The prices quoted are based on Exchange Rate of USD 1.00 = RM 4.13"
+
+
+def test_fill_template_refreshes_lme_remarks():
+    wb, ws = _eric_style_template()
+    _add_lme_remarks(ws)
+    _fill_template(ws, _runs(), _flags(), FakeSalesperson(),
+                   our_ref="X", client_name="Y", attn=None, me_consultant=None)
+    today = date.today().strftime("%d-%m-%Y")
+
+    texts = [c.value for row in ws.iter_rows() for c in row if isinstance(c.value, str)]
+    assert f"3. The prices quoted are based on {today} LME Aluminium @USD2,600/MT." in texts
+    assert f"3.  The prices quoted are based on {today} LME Copper @ USD 2,600/MT." in texts
+    assert ": Based on LME Alu.@USD2,600/MT and thereafter depands on current LME Aluminium price." in texts
+    # No stale rate or date survives anywhere in the sheet
+    assert not any("3,666" in t or "690" in t or "05-06-2026" in t or "18-06-2026" in t
+                   for t in texts)
+    # Non-LME exchange-rate note untouched
+    assert "NOTE : The prices quoted are based on Exchange Rate of USD 1.00 = RM 4.13" in texts
 
 
 def test_multiple_runs_all_land_above_subtotal():
