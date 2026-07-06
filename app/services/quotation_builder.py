@@ -122,12 +122,78 @@ def build_quotation(
 #  Template fill (preferred path)                                     #
 # ------------------------------------------------------------------ #
 
+# Column layout of the from-scratch builder; also the fallback when a
+# template's item-table header can't be found.
+DEFAULT_COLS = {"header_row": 0, "no": 1, "desc": 2, "unit": 3, "qty": 4,
+                "rate": 5, "amount": 6}
+
+
+def _find_header_columns(ws) -> dict | None:
+    """Locate the item-table header row (the first row with both a RATE and
+    an AMOUNT header) and map out which column holds what. Real templates
+    put Quantity/Unit/Unit Rate/Total Amount in different columns than the
+    from-scratch layout."""
+    for row in ws.iter_rows():
+        cells = [(c.column, str(c.value).strip().upper())
+                 for c in row if isinstance(c.value, str) and c.value.strip()]
+        rate = next((col for col, v in cells if "RATE" in v), None)
+        amount = next((col for col, v in cells if "AMOUNT" in v and "RATE" not in v), None)
+        if not (rate and amount):
+            continue
+        return {
+            "header_row": row[0].row,
+            "no": next((col for col, v in cells if v in ("NO.", "NO", "ITEM", "ITEM NO.")), 1),
+            "desc": next((col for col, v in cells if "DESCRIPTION" in v), 2),
+            "qty": next((col for col, v in cells if "QUANTITY" in v or "QTY" in v), None),
+            "unit": next((col for col, v in cells
+                          if v == "UNIT" or (v.startswith("UNIT") and "RATE" not in v)), None),
+            "rate": rate,
+            "amount": amount,
+        }
+    return None
+
+
+def _fill_labelled_fields(ws, salesperson, our_ref, client_name, attn, me_consultant):
+    """Real templates label their fields ("To", "Attn", "OUR REF : ") instead
+    of using <<tokens>>. Fill each value in after the label's colon."""
+    neighbour_labels = {
+        "TO": client_name or "",
+        "ATTN": attn or "",
+        "FROM": salesperson.name,
+        "DATE": date.today().strftime("%d-%m-%Y"),
+    }
+    inline_labels = {
+        "OUR REF": our_ref or "",
+        "M&E": me_consultant or "",
+        "M & E": me_consultant or "",
+    }
+    for row in ws.iter_rows():
+        for cell in row:
+            if not isinstance(cell.value, str):
+                continue
+            text = cell.value.strip()
+            upper = text.upper()
+
+            # e.g. "OUR REF    : " → value appended in the same cell
+            for label, value in inline_labels.items():
+                if value and upper.startswith(label) and text.endswith(":"):
+                    cell.value = cell.value.rstrip() + " " + value
+                    break
+            else:
+                # e.g. A8="To", B8=": " → value written into the next cell
+                value = neighbour_labels.get(upper.rstrip(": ").strip())
+                if value and upper.rstrip(": ").strip() in neighbour_labels:
+                    target = ws.cell(row=cell.row, column=cell.column + 1)
+                    existing = str(target.value or "").strip()
+                    if existing in ("", ":"):
+                        target.value = f": {value}"
+
+
 def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_consultant):
     """
-    Scan the template for known sentinel strings and replace them.
-    Then inject item rows above the totals block.
+    Fill the salesperson template: header fields, item block, totals.
+    Works with both <<token>> templates and label-styled real templates.
     """
-    # Replace placeholder tokens
     _replace_tokens(ws, {
         "<<OUR_REF>>": our_ref,
         "<<CLIENT>>": client_name or "",
@@ -140,6 +206,7 @@ def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_
         "<<LME_USD>>": f"USD {flags.lme_usd_per_mt:,.0f}/MT",
         "<<USD_MYR>>": f"USD 1 = RM {flags.usd_to_myr:.4f}",
     })
+    _fill_labelled_fields(ws, salesperson, our_ref, client_name, attn, me_consultant)
 
     # Find the row that contains "SUB-TOTAL" or "SUBTOTAL"
     subtotal_row = None
@@ -157,19 +224,36 @@ def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_
         _append_items(ws, runs, flags)
         return
 
-    # Find item start row (first blank row above subtotal that's below the header)
-    insert_row = subtotal_row
-    for r in range(subtotal_row - 1, 0, -1):
-        all_empty = all(
-            ws.cell(row=r, column=c).value in (None, "")
-            for c in range(1, 7)
-        )
-        if not all_empty:
-            insert_row = r + 1
-            break
+    cols = _find_header_columns(ws)
 
-    _insert_item_block(ws, runs, flags, insert_row)
-    _write_totals(ws, runs, subtotal_row)
+    if cols and cols["header_row"] < subtotal_row:
+        # Clear the sample items the template ships with: everything from the
+        # first row after the table header that has an item number or a
+        # description, down to the row above SUB-TOTAL.
+        item_start = None
+        for r in range(cols["header_row"] + 1, subtotal_row):
+            if (ws.cell(row=r, column=cols["no"]).value not in (None, "")
+                    or ws.cell(row=r, column=cols["desc"]).value not in (None, "")):
+                item_start = r
+                break
+        if item_start is not None:
+            _delete_rows(ws, item_start, subtotal_row - item_start)
+            subtotal_row = item_start
+        insert_row = subtotal_row
+    else:
+        # No recognisable header: first blank row above subtotal
+        insert_row = subtotal_row
+        for r in range(subtotal_row - 1, 0, -1):
+            all_empty = all(
+                ws.cell(row=r, column=c).value in (None, "")
+                for c in range(1, 7)
+            )
+            if not all_empty:
+                insert_row = r + 1
+                break
+
+    _insert_item_block(ws, runs, flags, insert_row, cols)
+    _write_totals(ws, runs, insert_row, (cols or {}).get("amount"))
 
 
 def _insert_row(ws, row: int):
@@ -199,6 +283,26 @@ def _insert_row(ws, row: int):
         ws.merge_cells(str(r))
 
 
+def _delete_rows(ws, idx: int, amount: int):
+    """Delete rows with the same merged-range bookkeeping as _insert_row:
+    ranges below the deleted span shift up, ranges overlapping it are
+    unmerged (their rows are gone)."""
+    last = idx + amount - 1
+    to_shift, to_drop = [], []
+    for rng in ws.merged_cells.ranges:
+        if rng.min_row > last:
+            to_shift.append(str(rng))
+        elif rng.max_row >= idx:
+            to_drop.append(str(rng))
+    for ref in to_shift + to_drop:
+        ws.unmerge_cells(ref)
+    ws.delete_rows(idx, amount)
+    for ref in to_shift:
+        r = CellRange(ref)
+        r.shift(row_shift=-amount)
+        ws.merge_cells(str(r))
+
+
 def _replace_tokens(ws, token_map: dict):
     for row in ws.iter_rows():
         for cell in row:
@@ -208,11 +312,14 @@ def _replace_tokens(ws, token_map: dict):
                         cell.value = cell.value.replace(token, value)
 
 
-def _insert_item_block(ws, runs: list[BOQRun], flags: FlagAnswers, start_row: int):
+def _insert_item_block(ws, runs: list[BOQRun], flags: FlagAnswers, start_row: int,
+                       cols: dict | None = None):
+    cols = cols or DEFAULT_COLS
     thin = Side(border_style="thin", color="000000")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
     section_fill = PatternFill("solid", fgColor="D9E1F2")
     section_font = Font(bold=True)
+    last_col = get_column_letter(cols["amount"])
 
     row = start_row
     item_num = 1
@@ -220,7 +327,7 @@ def _insert_item_block(ws, runs: list[BOQRun], flags: FlagAnswers, start_row: in
     for run in runs:
         # Section header
         _insert_row(ws, row)
-        ws.merge_cells(f"A{row}:F{row}")
+        ws.merge_cells(f"A{row}:{last_col}{row}")
         c = ws.cell(row=row, column=1,
                     value=f"{run.run_id} — {run.routing} ({run.run_type}, {run.material})")
         c.font = section_font
@@ -230,43 +337,41 @@ def _insert_item_block(ws, runs: list[BOQRun], flags: FlagAnswers, start_row: in
 
         for item in run.items:
             _insert_row(ws, row)
-            _write_quotation_row(ws, row, item_num, item, border)
+            _write_quotation_row(ws, row, item_num, item, border, cols)
             item_num += 1
             row += 1
 
         if run.piu_items:
             _insert_row(ws, row)
-            ws.merge_cells(f"A{row}:F{row}")
+            ws.merge_cells(f"A{row}:{last_col}{row}")
             c = ws.cell(row=row, column=1, value="PIU — PLUG-IN UNITS")
             c.font = Font(italic=True, bold=True)
             c.border = border
             row += 1
             for item in run.piu_items:
                 _insert_row(ws, row)
-                _write_quotation_row(ws, row, item_num, item, border)
+                _write_quotation_row(ws, row, item_num, item, border, cols)
                 item_num += 1
                 row += 1
 
-        row += 1  # blank spacer
+        # Blank spacer — must be a real insertion, otherwise the pointer
+        # walks past the SUB-TOTAL row and later runs land below the totals.
+        _insert_row(ws, row)
+        row += 1
 
 
-def _write_quotation_row(ws, row: int, item_num: int, item: BOQLineItem, border):
-    values = [item_num, item.description, item.unit, item.qty,
-              item.unit_rate_myr, item.amount_myr]
-    for col, val in enumerate(values, 1):
-        c = ws.cell(row=row, column=col, value=val)
+def _write_quotation_row(ws, row: int, item_num: int, item: BOQLineItem, border,
+                         cols: dict | None = None):
+    cols = cols or DEFAULT_COLS
+    mapping = [("no", item_num), ("desc", item.description), ("unit", item.unit),
+               ("qty", item.qty), ("rate", item.unit_rate_myr), ("amount", item.amount_myr)]
+    values = {cols[key]: val for key, val in mapping if cols.get(key)}
+    right_cols = {cols.get("qty"), cols["rate"], cols["amount"]}
+    for col in range(1, cols["amount"] + 1):
+        c = ws.cell(row=row, column=col, value=values.get(col))
         c.border = border
-        if col >= 3:
+        if col in right_cols:
             c.alignment = Alignment(horizontal="right")
-
-
-def _amount_column(ws) -> int | None:
-    """Column of the 'AMOUNT (RM)' header in the item table, if present."""
-    for row in ws.iter_rows():
-        for cell in row:
-            if isinstance(cell.value, str) and cell.value.strip().upper().startswith("AMOUNT"):
-                return cell.column
-    return None
 
 
 def _subtotal_sst_grand(runs: list[BOQRun]) -> tuple[int, int, int]:
@@ -277,11 +382,12 @@ def _subtotal_sst_grand(runs: list[BOQRun]) -> tuple[int, int, int]:
     return subtotal, sst, subtotal + sst
 
 
-def _write_totals(ws, runs: list[BOQRun], min_row: int):
+def _write_totals(ws, runs: list[BOQRun], min_row: int, amount_col: int | None = None):
     subtotal, sst, grand_total = _subtotal_sst_grand(runs)
     # Write into the AMOUNT column when the template has one; otherwise fall
     # back to the historical assumption of two columns right of the label.
-    amount_col = _amount_column(ws)
+    if amount_col is None:
+        amount_col = (_find_header_columns(ws) or {}).get("amount")
 
     for row in ws.iter_rows(min_row=min_row):
         for cell in row:
