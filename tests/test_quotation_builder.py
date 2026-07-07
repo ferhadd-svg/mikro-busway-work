@@ -1,9 +1,24 @@
 import re
+from types import SimpleNamespace
 
 import openpyxl
 
 from app.schemas.boq import BOQLineItem, BOQRun, FlagAnswers
-from app.services.quotation_builder import _fill_template, _insert_row
+from app.services.quotation_builder import _fill_template, _insert_row, _delete_rows
+
+
+class _FakeAnchor:
+    """Stand-in for openpyxl's OneCellAnchor/TwoCellAnchor — enough shape for
+    _shift_images (it only reads/writes .anchor._from/.to .row), without
+    needing real image bytes in tests."""
+    def __init__(self, from_row, from_col=0, to_row=None, to_col=None):
+        self._from = SimpleNamespace(row=from_row, col=from_col)
+        self.to = SimpleNamespace(row=to_row, col=to_col) if to_row is not None else None
+
+
+class _FakeImage:
+    def __init__(self, anchor):
+        self.anchor = anchor
 
 
 class FakeSalesperson:
@@ -66,6 +81,34 @@ def test_insert_row_keeps_merges_aligned_with_values():
     assert ws["A6"].value == "SUB-TOTAL (RM)"
     assert "A6:D6" in merged
     assert "A5:D5" not in merged
+
+
+def test_insert_row_shifts_image_anchors_below_it():
+    # Real Mikro templates anchor the salesperson's signature/stamp image near
+    # the footer. Row insertions for items must carry it down with the text
+    # it sits beside, or it ends up floating over the wrong content.
+    wb, ws = _template()
+    ws._images = [_FakeImage(_FakeAnchor(from_row=6, from_col=1, to_row=8, to_col=3))]
+    _insert_row(ws, 4)
+    img = ws._images[0]
+    assert img.anchor._from.row == 7
+    assert img.anchor.to.row == 9
+
+
+def test_insert_row_does_not_shift_image_anchors_above_it():
+    wb, ws = _template()
+    ws._images = [_FakeImage(_FakeAnchor(from_row=1, from_col=0))]
+    _insert_row(ws, 4)
+    assert ws._images[0].anchor._from.row == 1
+
+
+def test_delete_rows_shifts_image_anchors_below_it():
+    wb, ws = _template()
+    ws._images = [_FakeImage(_FakeAnchor(from_row=10, from_col=1, to_row=12, to_col=3))]
+    _delete_rows(ws, 4, 3)
+    img = ws._images[0]
+    assert img.anchor._from.row == 7
+    assert img.anchor.to.row == 9
 
 
 def test_fill_template_totals_and_merges():
@@ -132,6 +175,30 @@ def _eric_style_template():
     ws["B26"] = "Remarks :"
     ws["B27"] = "1. The quantities quoted are rough estimation only. Final busway amount shall based on the actual"
     return wb, ws
+
+
+def test_fill_real_style_template_keeps_footer_image_aligned():
+    # Mirrors the real bug found in Eric's actual template: it anchors a
+    # signature/stamp image just above the footer (here stood in for by the
+    # "Remarks :" row). Filling in real items shifts that row down; the
+    # image must move by the same amount, not stay frozen at its original
+    # position while the text around it moves — which is what happened
+    # before _shift_images existed.
+    wb, ws = _eric_style_template()
+    anchor_row_before = _find_row(ws, lambda v: v == "Remarks :") - 1
+    ws._images = [_FakeImage(_FakeAnchor(from_row=anchor_row_before, from_col=5,
+                                         to_row=anchor_row_before + 2, to_col=7))]
+
+    _fill_template(ws, _runs(), _flags(), FakeSalesperson(),
+                   our_ref="MK/Q/2026/001", client_name="ACME Sdn Bhd",
+                   attn="Mr. Lim", me_consultant="XYZ Consult")
+
+    remarks_row_after = _find_row(ws, lambda v: str(v or "") == "Remarks :")
+    delta = (remarks_row_after - 1) - anchor_row_before
+
+    img = ws._images[0]
+    assert img.anchor._from.row == anchor_row_before + delta
+    assert img.anchor.to.row == anchor_row_before + 2 + delta
 
 
 def test_fill_real_style_template():

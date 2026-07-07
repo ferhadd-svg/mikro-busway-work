@@ -256,13 +256,32 @@ def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_
     _write_totals(ws, runs, insert_row, (cols or {}).get("amount"), sum_rows)
 
 
+def _shift_images(ws, threshold: int, delta: int):
+    """Keep embedded images (company logo, salesperson signature/stamp) anchored
+    to the same content as row insertions/deletions happen. openpyxl's
+    insert_rows/delete_rows move cell values but never touch image anchors,
+    so without this a signature image stays frozen at its original row while
+    the "PREPARED BY"/"REVIEWED BY" text it belongs next to moves — leaving
+    it floating over the wrong content."""
+    for img in getattr(ws, "_images", []):
+        anchor = img.anchor
+        frm = getattr(anchor, "_from", None)
+        if frm is not None and frm.row >= threshold:
+            frm.row += delta
+        to = getattr(anchor, "to", None)
+        if to is not None and to.row >= threshold:
+            to.row += delta
+
+
 def _insert_row(ws, row: int):
-    """Insert one row, keeping merged cells aligned with their values.
+    """Insert one row, keeping merged cells and embedded images aligned with
+    their values.
 
     openpyxl's insert_rows shifts cell values down but leaves merged ranges
-    at their old coordinates, so every merge at or below the insertion point
-    (the totals block, remarks, signature area at the end of the template)
-    drifts one row out of place per inserted item. Re-anchor them manually.
+    (and image anchors) at their old coordinates, so every merge or image at
+    or below the insertion point (the totals block, remarks, signature area
+    at the end of the template) drifts one row out of place per inserted
+    item. Re-anchor them manually.
     """
     to_shift, to_expand = [], []
     for rng in ws.merged_cells.ranges:
@@ -281,12 +300,13 @@ def _insert_row(ws, row: int):
         r = CellRange(ref)
         r.expand(down=1)
         ws.merge_cells(str(r))
+    _shift_images(ws, row, 1)
 
 
 def _delete_rows(ws, idx: int, amount: int):
-    """Delete rows with the same merged-range bookkeeping as _insert_row:
-    ranges below the deleted span shift up, ranges overlapping it are
-    unmerged (their rows are gone)."""
+    """Delete rows with the same merged-range and image-anchor bookkeeping as
+    _insert_row: ranges/images below the deleted span shift up, ranges
+    overlapping it are unmerged (their rows are gone)."""
     last = idx + amount - 1
     to_shift, to_drop = [], []
     for rng in ws.merged_cells.ranges:
@@ -301,6 +321,7 @@ def _delete_rows(ws, idx: int, amount: int):
         r = CellRange(ref)
         r.shift(row_shift=-amount)
         ws.merge_cells(str(r))
+    _shift_images(ws, last + 1, -amount)
 
 
 def _replace_tokens(ws, token_map: dict):
