@@ -207,6 +207,7 @@ def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_
         "<<USD_MYR>>": f"USD 1 = RM {flags.usd_to_myr:.4f}",
     })
     _fill_labelled_fields(ws, salesperson, our_ref, client_name, attn, me_consultant)
+    _refresh_lme_mentions(ws, flags)
 
     # Find the row that contains "SUB-TOTAL" or "SUBTOTAL"
     subtotal_row = None
@@ -310,6 +311,32 @@ def _replace_tokens(ws, token_map: dict):
                 for token, value in token_map.items():
                     if token in cell.value:
                         cell.value = cell.value.replace(token, value)
+
+
+# Hard-typed LME mentions in template remark/validity text, e.g.
+# "Based on LME Alu.@USD3,666/MT" or "based on 05-06-2026 LME Aluminium
+# @USD3,666/MT". The amount follows "USD" (optionally spaced, commas or a
+# stray space inside the digits); the quotation date precedes "LME".
+_LME_USD_RE = re.compile(r"(USD\s*)(\d[\d,\s]*\d|\d)")
+_LME_DATE_RE = re.compile(r"\b\d{1,2}-\d{1,2}-\d{4}\b(?=\s+LME\b)")
+
+
+def _refresh_lme_mentions(ws, flags: FlagAnswers):
+    """Real templates ship with the previous quotation's LME rate and date
+    hard-typed in the remark/validity blocks (aluminium in B/C, copper in
+    L/M). Rewrite them to the rate the salesperson entered and today's date
+    so a quotation never goes out quoting a stale rate. Only cells whose
+    text mentions LME are touched."""
+    rate = f"{flags.lme_usd_per_mt:,.0f}"
+    today = date.today().strftime("%d-%m-%Y")
+    for row in ws.iter_rows():
+        for cell in row:
+            if not isinstance(cell.value, str) or "LME" not in cell.value:
+                continue
+            new = _LME_USD_RE.sub(rf"\g<1>{rate}", cell.value)
+            new = _LME_DATE_RE.sub(today, new)
+            if new != cell.value:
+                cell.value = new
 
 
 def _run_title(run: BOQRun) -> str:
