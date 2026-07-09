@@ -604,8 +604,30 @@
 </head>
 <body>
 
+<!-- ── Login ──────────────────────────────────────────────────── -->
+<div id="view-login" style="display:none; min-height:100vh; align-items:center; justify-content:center;">
+  <div class="card" style="width:100%; max-width:380px;">
+    <div class="logo-area" style="margin-bottom:20px;">
+      <img src="/static/mikro-logo.png" alt="Mikro" style="height:34px;"
+           onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+      <span class="logo-fallback" style="display:none;">Mikro</span>
+    </div>
+    <div class="card-heading">Log in</div>
+    <div class="form-group" style="margin-bottom:14px;">
+      <label>Email</label>
+      <input id="login-email" type="email" placeholder="you@mikro.com.my" onkeydown="if(event.key==='Enter') doLogin();" />
+    </div>
+    <div class="form-group" style="margin-bottom:14px;">
+      <label>Password</label>
+      <input id="login-password" type="password" onkeydown="if(event.key==='Enter') doLogin();" />
+    </div>
+    <div id="login-error" style="color:var(--red); font-size:.83rem; margin-bottom:12px; min-height:1em;"></div>
+    <button class="btn btn-primary" style="width:100%;" onclick="doLogin()">Log in</button>
+  </div>
+</div>
+
 <!-- ── Header ─────────────────────────────────────────────────── -->
-<header>
+<header id="app-header" style="display:none;">
   <div class="logo-area">
     <img src="/static/mikro-logo.png" alt="Mikro"
          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
@@ -621,10 +643,32 @@
   </nav>
 
   <div class="header-badge" id="price-list-badge" style="margin-left:12px;">Loading…</div>
+
+  <div style="display:flex; align-items:center; gap:10px; margin-left:16px; position:relative;">
+    <span style="font-size:.83rem; color:var(--muted);">
+      <strong id="user-name" style="color:var(--text);"></strong> · <span id="user-role"></span>
+    </span>
+    <button class="btn btn-outline btn-sm" onclick="toggleChangePassword()">Change password</button>
+    <button class="btn btn-outline btn-sm" onclick="doLogout()">Log out</button>
+
+    <div id="change-password-panel" class="card" style="display:none; position:absolute; top:44px; right:0; width:280px; z-index:200;">
+      <div class="section-label" style="margin-top:0;">Change password</div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label>Current password</label>
+        <input id="cp-current" type="password" />
+      </div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label>New password</label>
+        <input id="cp-new" type="password" />
+      </div>
+      <div id="cp-message" style="font-size:.8rem; margin-bottom:10px; min-height:1em;"></div>
+      <button class="btn btn-primary btn-sm" style="width:100%;" onclick="submitChangePassword()">Update password</button>
+    </div>
+  </div>
 </header>
 
 <!-- ── Main ───────────────────────────────────────────────────── -->
-<main>
+<main style="display:none;">
   <div id="alert-area"></div>
 
   <!-- ═══════════ NEW PROJECT TAB ═══════════ -->
@@ -897,6 +941,36 @@
         <input type="file" accept=".xlsx" style="display:none;" onchange="uploadTemplate(this)" />
       </label>
     </div>
+
+    <div class="card">
+      <div class="card-eyebrow">Team</div>
+      <div class="card-heading">User Accounts</div>
+      <div id="user-list" style="margin-bottom:20px;"></div>
+      <div class="divider"></div>
+      <div class="section-label">Add user account</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Full Name <span class="req">*</span></label>
+          <input id="user-name-input" placeholder="e.g. Ahmad Fariz" />
+        </div>
+        <div class="form-group">
+          <label>Email <span class="req">*</span></label>
+          <input id="user-email-input" type="email" placeholder="ahmad@mikro.com.my" />
+        </div>
+        <div class="form-group">
+          <label>Password <span class="req">*</span></label>
+          <input id="user-password-input" type="password" placeholder="At least 8 characters" />
+        </div>
+        <div class="form-group">
+          <label>Role</label>
+          <select id="user-role-input">
+            <option value="sales">Sales</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" style="margin-top:16px;" onclick="addUser()">Add User</button>
+    </div>
   </div>
 
 </main>
@@ -905,13 +979,80 @@
   const API = '';
   let currentProjectId = null;
   let extractionData = null;
+  let currentUser = null;
 
   window.addEventListener('DOMContentLoaded', async () => {
+    await checkAuth();
+  });
+
+  // ── Auth ──────────────────────────────────────────────────────
+  async function checkAuth() {
+    try {
+      currentUser = await api('GET', '/auth/me');
+      await showApp();
+    } catch(e) {
+      showLogin();
+    }
+  }
+
+  function showLogin() {
+    document.getElementById('view-login').style.display = 'flex';
+    document.getElementById('app-header').style.display = 'none';
+    document.querySelector('main').style.display = 'none';
+  }
+
+  async function showApp() {
+    document.getElementById('view-login').style.display = 'none';
+    document.getElementById('app-header').style.display = 'flex';
+    document.querySelector('main').style.display = 'block';
+    document.getElementById('user-name').textContent = currentUser.name;
+    document.getElementById('user-role').textContent = currentUser.role;
+    document.getElementById('nav-admin').style.display = currentUser.role === 'admin' ? '' : 'none';
     await loadSalespeople();
     await loadPriceListStatus();
     setupDragDrop();
     addRunCard();
-  });
+  }
+
+  async function doLogin() {
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    const errEl = document.getElementById('login-error');
+    errEl.textContent = '';
+    if (!email || !password) { errEl.textContent = 'Enter your email and password.'; return; }
+    try {
+      currentUser = await api('POST', '/auth/login', { email, password });
+      document.getElementById('login-password').value = '';
+      await showApp();
+    } catch(e) { errEl.textContent = e.message; }
+  }
+
+  async function doLogout() {
+    try { await api('POST', '/auth/logout'); } catch(e) {}
+    currentUser = null;
+    showLogin();
+  }
+
+  function toggleChangePassword() {
+    const el = document.getElementById('change-password-panel');
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  }
+
+  async function submitChangePassword() {
+    const current_password = document.getElementById('cp-current').value;
+    const new_password = document.getElementById('cp-new').value;
+    const msgEl = document.getElementById('cp-message');
+    msgEl.textContent = '';
+    if (!current_password || !new_password) { msgEl.textContent = 'Fill in both fields.'; return; }
+    if (new_password.length < 8) { msgEl.textContent = 'New password must be at least 8 characters.'; return; }
+    try {
+      await api('POST', '/auth/change-password', { current_password, new_password });
+      document.getElementById('cp-current').value = '';
+      document.getElementById('cp-new').value = '';
+      msgEl.style.color = 'var(--green)';
+      msgEl.textContent = 'Password changed.';
+    } catch(e) { msgEl.style.color = 'var(--red)'; msgEl.textContent = e.message; }
+  }
 
   // ── Tabs ──────────────────────────────────────────────────────
   function showTab(name) {
@@ -923,7 +1064,7 @@
       document.getElementById(`nav-${t}`).className = t === name ? 'nav-btn active' : 'nav-btn';
     });
     if (name === 'projects') loadProjects();
-    if (name === 'admin') { loadSalespeopleAdmin(); loadPriceListStatus(); }
+    if (name === 'admin') { loadSalespeopleAdmin(); loadPriceListStatus(); loadUsersAdmin(); }
   }
 
   // ── Steps ─────────────────────────────────────────────────────
@@ -1097,12 +1238,21 @@
 
   // ── API ───────────────────────────────────────────────────────
   async function api(method, path, body) {
-    const opts = { method, headers: {} };
+    const opts = { method, headers: {}, credentials: 'include' };
     if (body instanceof FormData) { opts.body = body; }
     else if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
     const res = await fetch(API + path, opts);
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    if (res.status === 401 && path !== '/auth/me' && path !== '/auth/login') {
+      currentUser = null;
+      showLogin();
+    }
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      if (typeof data.detail === 'string') msg = data.detail;
+      else if (Array.isArray(data.detail)) msg = data.detail.map(d => d.msg || JSON.stringify(d)).join('; ');
+      throw new Error(msg);
+    }
     return data;
   }
 
@@ -1384,6 +1534,49 @@
       await loadSalespeopleAdmin();
       await loadSalespeople();
       alert_('success', `${name} added successfully.`);
+    } catch(e) { alert_('error', e.message); }
+  }
+
+  // ── User accounts (admin only) ─────────────────────────────────
+  async function loadUsersAdmin() {
+    const el = document.getElementById('user-list');
+    if (!el) return;
+    try {
+      const list = await api('GET', '/auth/users');
+      if (!list.length) { el.innerHTML = '<p style="color:var(--muted); font-size:.85rem;">No user accounts yet.</p>'; return; }
+      el.innerHTML = `<div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+        <tbody>${list.map(u => `<tr>
+          <td><strong>${u.name}</strong></td><td>${u.email}</td>
+          <td><span class="tag" style="background:var(--brand-light); color:var(--brand);">${u.role}</span></td>
+          <td><span class="tag" style="background:${u.is_active?'var(--green-light)':'var(--grey-bg)'}; color:${u.is_active?'var(--green)':'var(--muted)'};">${u.is_active?'Active':'Inactive'}</span></td>
+          <td>${u.is_active
+            ? `<button class="btn btn-outline btn-sm" onclick="toggleUserActive(${u.id}, false)">Deactivate</button>`
+            : `<button class="btn btn-outline btn-sm" onclick="toggleUserActive(${u.id}, true)">Reactivate</button>`}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+    } catch(e) { el.innerHTML = `<div class="alert alert-error">Error: ${e.message}</div>`; }
+  }
+
+  async function addUser() {
+    const name = document.getElementById('user-name-input').value.trim();
+    const email = document.getElementById('user-email-input').value.trim();
+    const password = document.getElementById('user-password-input').value;
+    const role = document.getElementById('user-role-input').value;
+    if (!name || !email || !password) { alert_('error', 'Name, email, and password are required.'); return; }
+    if (password.length < 8) { alert_('error', 'Password must be at least 8 characters.'); return; }
+    try {
+      await api('POST', '/auth/users', { name, email, password, role });
+      ['user-name-input','user-email-input','user-password-input'].forEach(id => document.getElementById(id).value='');
+      await loadUsersAdmin();
+      alert_('success', `${name}'s account was created. Share their password with them securely.`);
+    } catch(e) { alert_('error', e.message); }
+  }
+
+  async function toggleUserActive(id, active) {
+    try {
+      await api('PATCH', `/auth/users/${id}`, { is_active: active });
+      await loadUsersAdmin();
     } catch(e) { alert_('error', e.message); }
   }
 

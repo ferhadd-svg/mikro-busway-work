@@ -13,3 +13,4 @@ Pillow>=10.4.0
 aiofiles>=24.1.0
 python-dotenv>=1.0.1
 pytest>=8.0.0
+bcrypt>=4.2.0
