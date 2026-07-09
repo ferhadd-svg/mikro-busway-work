@@ -1,11 +1,12 @@
 import shutil
 from pathlib import Path
 
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from pydantic import BaseModel
 
 from app.config import settings
 from app.services.price_list import price_list
+from app.services.auth import get_current_user, require_role
 
 router = APIRouter(prefix="/price-list", tags=["Price List"])
 
@@ -16,7 +17,7 @@ class PriceListInfo(BaseModel):
     available_files: list[str]
 
 
-@router.get("/", response_model=PriceListInfo)
+@router.get("/", response_model=PriceListInfo, dependencies=[Depends(get_current_user)])
 def get_price_list_info():
     files = sorted(settings.price_list_dir.glob("*"))
     return PriceListInfo(
@@ -26,7 +27,7 @@ def get_price_list_info():
     )
 
 
-@router.post("/upload", status_code=201)
+@router.post("/upload", status_code=201, dependencies=[Depends(require_role("admin"))])
 async def upload_price_list(file: UploadFile = File(...)):
     """Upload a new price list (.xls or .xlsx). Becomes active immediately."""
     if not file.filename.endswith((".xls", ".xlsx")):
@@ -39,7 +40,7 @@ async def upload_price_list(file: UploadFile = File(...)):
     return {"message": f"Price list '{file.filename}' loaded successfully."}
 
 
-@router.post("/activate/{filename}")
+@router.post("/activate/{filename}", dependencies=[Depends(require_role("admin"))])
 def activate_price_list(filename: str):
     """Switch to a previously uploaded price list file."""
     path = settings.price_list_dir / filename
@@ -49,13 +50,13 @@ def activate_price_list(filename: str):
     return {"message": f"'{filename}' is now the active price list."}
 
 
-@router.get("/lookup/feeder")
+@router.get("/lookup/feeder", dependencies=[Depends(get_current_user)])
 def lookup_feeder(frame_a: int, earth_pct: int, material: str):
     _require_loaded()
     return {"rate": price_list.feeder(frame_a, earth_pct, material)}
 
 
-@router.get("/lookup/piu")
+@router.get("/lookup/piu", dependencies=[Depends(get_current_user)])
 def lookup_piu(rating_a: int, ka: int = 26):
     _require_loaded()
     return {"rate": price_list.piu(rating_a, ka)}

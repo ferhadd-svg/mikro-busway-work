@@ -27,9 +27,13 @@ from app.services.drawing_reader import read_drawing
 from app.services.price_list import price_list
 from app.services.boq_builder import build_boq
 from app.services.quotation_builder import build_quotation
+from app.services.auth import get_current_user, require_role
 from app.config import settings
 
-router = APIRouter(prefix="/projects", tags=["Projects"])
+# Every endpoint in this router requires a logged-in user (any role) — see
+# the note in generate_quotation()/etc. below on the one exception (template
+# upload, which is admin-only).
+router = APIRouter(prefix="/projects", tags=["Projects"], dependencies=[Depends(get_current_user)])
 
 
 # ------------------------------------------------------------------ #
@@ -341,7 +345,7 @@ def assign_salesperson(project_id: int, sp_id: int, db: Session = Depends(get_db
 #  Upload salesperson quotation template                              #
 # ------------------------------------------------------------------ #
 
-@router.post("/templates/upload")
+@router.post("/templates/upload", dependencies=[Depends(require_role("admin"))])
 async def upload_template(file: UploadFile = File(...)):
     if not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(400, "Only .xlsx or .xls templates accepted.")

@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from app.database import engine, Base
 from app.config import settings
 from app.services.price_list import price_list
-from app.routers import salespeople, projects, price_list as price_list_router
+from app.routers import salespeople, projects, price_list as price_list_router, auth
 
 
 @asynccontextmanager
@@ -55,6 +55,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(salespeople.router)
 app.include_router(projects.router)
 app.include_router(price_list_router.router)
