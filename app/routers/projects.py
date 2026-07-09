@@ -42,7 +42,14 @@ router = APIRouter(prefix="/projects", tags=["Projects"], dependencies=[Depends(
 
 @router.get("/", response_model=list[ProjectOut])
 def list_projects(db: Session = Depends(get_db)):
-    return db.query(Project).order_by(Project.created_at.desc()).all()
+    projects = db.query(Project).order_by(Project.created_at.desc()).all()
+    sp_names = dict(db.query(Salesperson.id, Salesperson.name).all())
+    out = []
+    for p in projects:
+        po = ProjectOut.model_validate(p)
+        po.salesperson_name = sp_names.get(p.salesperson_id)
+        out.append(po)
+    return out
 
 
 @router.post("/", response_model=ProjectOut, status_code=201)
