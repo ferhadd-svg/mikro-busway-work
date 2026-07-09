@@ -6,6 +6,7 @@ from app.config import settings
 from app.models.user import User
 from app.schemas.user import (
     LoginRequest, UserOut, ChangePasswordRequest, UserCreate, UserUpdate,
+    AdminPasswordReset,
 )
 from app.services.auth import (
     hash_password, verify_password, create_session, delete_session,
@@ -94,8 +95,24 @@ def update_user(user_id: int, data: UserUpdate, db: Session = Depends(get_db)):
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(404, "User not found.")
-    for field, value in data.model_dump(exclude_none=True).items():
+    updates = data.model_dump(exclude_none=True)
+    if "email" in updates and updates["email"] != user.email:
+        existing = db.query(User).filter(User.email == updates["email"]).first()
+        if existing:
+            raise HTTPException(400, f"An account with email '{updates['email']}' already exists.")
+    for field, value in updates.items():
         setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.post("/users/{user_id}/reset-password", response_model=UserOut, dependencies=[Depends(require_role("admin"))])
+def reset_user_password(user_id: int, data: AdminPasswordReset, db: Session = Depends(get_db)):
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "User not found.")
+    user.hashed_password = hash_password(data.new_password)
     db.commit()
     db.refresh(user)
     return user
