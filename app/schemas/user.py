@@ -30,5 +30,11 @@ class UserCreate(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    name: str | None = None
+    email: EmailStr | None = None
     role: Literal["admin", "sales"] | None = None
     is_active: bool | None = None
+
+
+class AdminPasswordReset(BaseModel):
+    new_password: str = Field(min_length=8)
