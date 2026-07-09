@@ -75,39 +75,6 @@
       color: var(--muted);
     }
 
-    /* ── Top nav ─────────────────────────────────────────────── */
-    nav {
-      display: flex;
-      gap: 4px;
-      margin-left: auto;
-      align-items: center;
-    }
-    .nav-btn {
-      padding: 8px 18px;
-      border-radius: 8px;
-      font-size: .86rem;
-      font-weight: 600;
-      cursor: pointer;
-      border: none;
-      background: transparent;
-      color: var(--muted);
-      transition: all .15s;
-    }
-    .nav-btn:hover { background: var(--grey-bg); color: var(--text); }
-    .nav-btn.active { background: var(--brand-light); color: var(--brand); }
-    .nav-pill {
-      background: var(--brand);
-      color: #fff;
-      padding: 9px 20px;
-      border-radius: 8px;
-      font-size: .86rem;
-      font-weight: 700;
-      cursor: pointer;
-      border: none;
-      transition: background .15s;
-    }
-    .nav-pill:hover { background: var(--brand-dark); }
-
     .header-badge {
       font-size: .75rem;
       font-weight: 600;
@@ -121,7 +88,79 @@
     .header-badge.loaded { background: var(--green-light); color: var(--green); border-color: #a8dfc7; }
 
     /* ── Layout ─────────────────────────────────────────────── */
-    main { max-width: 860px; margin: 40px auto; padding: 0 20px 80px; }
+    #app-shell { display: flex; align-items: flex-start; }
+    main { max-width: 1180px; margin: 32px auto; padding: 0 32px 80px; flex: 1; min-width: 0; }
+    .wizard-wrap { max-width: 860px; margin: 0 auto; }
+
+    /* ── Sidebar ────────────────────────────────────────────── */
+    #app-sidebar {
+      width: 220px;
+      flex-shrink: 0;
+      background: #fff;
+      border-right: 1px solid var(--border);
+      height: calc(100vh - 72px);
+      position: sticky;
+      top: 72px;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 12px;
+      transition: width .18s ease;
+    }
+    #app-sidebar.collapsed { width: 64px; }
+    #app-sidebar.collapsed .side-label { display: none; }
+    #app-sidebar.collapsed .side-link { justify-content: center; }
+    #sidebar-toggle {
+      align-self: flex-end;
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 6px 10px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+    }
+    #sidebar-toggle:hover { background: var(--grey-bg); color: var(--text); }
+    #sidebar-nav { display: flex; flex-direction: column; gap: 4px; }
+    .side-link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 9px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: .87rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+      white-space: nowrap;
+      transition: all .15s;
+      font-family: inherit;
+    }
+    .side-link:hover { background: var(--grey-bg); color: var(--text); }
+    .side-link.active { background: var(--brand-light); color: var(--brand); }
+    .side-icon { font-size: 1.05rem; flex-shrink: 0; width: 20px; text-align: center; }
+
+    /* ── Dashboard metrics ──────────────────────────────────── */
+    .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .metric-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 22px 24px;
+    }
+    .metric-card .metric-label {
+      font-size: .74rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .metric-card .metric-value { font-size: 1.9rem; font-weight: 800; color: var(--text); }
 
     /* ── Cards ─────────────────────────────────────────────── */
     .card {
@@ -497,35 +536,6 @@
     .btn-demo:hover { background: rgba(255,255,255,.28); border-color: rgba(255,255,255,.6); }
 
     /* ── Project list ─────────────────────────────────────────── */
-    .proj-list { display: flex; flex-direction: column; gap: 10px; }
-    .proj-item {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 16px 20px;
-      border: 1.5px solid var(--border);
-      border-radius: 12px;
-      cursor: pointer;
-      transition: all .15s;
-      background: #fff;
-    }
-    .proj-item:hover { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(31,95,166,.08); }
-    .proj-dot {
-      width: 10px; height: 10px;
-      border-radius: 50%;
-      background: var(--border);
-      flex-shrink: 0;
-    }
-    .proj-ref { font-weight: 700; font-size: .92rem; }
-    .proj-client { font-size: .8rem; color: var(--muted); margin-top: 1px; }
-    .proj-status {
-      margin-left: auto;
-      font-size: .72rem;
-      font-weight: 700;
-      padding: 4px 12px;
-      border-radius: 20px;
-      white-space: nowrap;
-    }
     .s-draft            { background: var(--grey-bg); color: var(--muted); border: 1px solid var(--border); }
     .s-flags_pending,
     .s-reading_drawing  { background: var(--orange-light); color: var(--orange); }
@@ -562,9 +572,6 @@
       }
       .logo-area img { height: 30px; }
       .logo-divider, .logo-label { display: none; }
-      nav { margin-left: auto; gap: 4px; }
-      .nav-pill { padding: 8px 14px; font-size: .82rem; }
-      .nav-btn  { padding: 8px 12px; font-size: .82rem; }
       .header-badge {
         margin-left: 0 !important;
         flex-basis: 100%;
@@ -586,19 +593,24 @@
       .demo-banner { flex-wrap: wrap; padding: 18px; }
       .btn-demo { margin-left: 0; width: 100%; justify-content: center; }
       .totals-block { padding: 18px; }
+
+      /* Sidebar becomes a horizontal, non-collapsible icon bar */
+      #app-shell { flex-direction: column; }
+      #app-sidebar {
+        position: static; height: auto; width: 100%; border-right: none;
+        border-bottom: 1px solid var(--border); flex-direction: row; overflow-x: auto;
+      }
+      #app-sidebar.collapsed { width: 100%; }
+      .side-label { display: none; }
+      #sidebar-toggle { display: none; }
+      .metric-grid { grid-template-columns: 1fr 1fr; }
     }
 
     @media (max-width: 430px) {
-      /* Nav drops to its own full-width row, evenly spread */
-      nav {
-        flex-basis: 100%;
-        margin-left: 0;
-        justify-content: space-between;
-      }
-      .nav-pill, .nav-btn { padding: 8px 10px; font-size: .8rem; }
       /* Full-width primary actions are easier to tap on a phone */
       .btn { width: 100%; justify-content: center; }
       .btn-sm { width: auto; }
+      .metric-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -636,13 +648,7 @@
   <div class="logo-divider"></div>
   <span class="logo-label">Busway Quotation Engine</span>
 
-  <nav>
-    <button class="nav-pill" id="nav-new" onclick="showTab('new')">+ New Project</button>
-    <button class="nav-btn" id="nav-projects" onclick="showTab('projects')"><span>My Projects</span></button>
-    <button class="nav-btn" id="nav-admin" onclick="showTab('admin')"><span>Admin</span></button>
-  </nav>
-
-  <div class="header-badge" id="price-list-badge" style="margin-left:12px;">Loading…</div>
+  <div class="header-badge" id="price-list-badge" style="margin-left:auto;">Loading…</div>
 
   <div style="display:flex; align-items:center; gap:10px; margin-left:16px; position:relative;">
     <span style="font-size:.83rem; color:var(--muted);">
@@ -667,12 +673,43 @@
   </div>
 </header>
 
-<!-- ── Main ───────────────────────────────────────────────────── -->
-<main style="display:none;">
+<!-- ── Shell ──────────────────────────────────────────────────── -->
+<div id="app-shell" style="display:none;">
+<aside id="app-sidebar">
+  <button id="sidebar-toggle" onclick="toggleSidebar()" title="Collapse sidebar">
+    <span class="sidebar-toggle-icon">‹</span>
+  </button>
+  <nav id="sidebar-nav">
+    <button class="side-link" id="nav-dashboard" onclick="showTab('dashboard')">
+      <span class="side-icon">▦</span><span class="side-label">Dashboard</span>
+    </button>
+    <button class="side-link" id="nav-new" onclick="showTab('new')">
+      <span class="side-icon">+</span><span class="side-label">New Project</span>
+    </button>
+    <button class="side-link" id="nav-projects" onclick="showTab('projects')">
+      <span class="side-icon">▤</span><span class="side-label">Projects</span>
+    </button>
+    <button class="side-link" id="nav-admin" onclick="showTab('admin')">
+      <span class="side-icon">⚙</span><span class="side-label">Admin</span>
+    </button>
+  </nav>
+</aside>
+<main>
   <div id="alert-area"></div>
 
+  <!-- ═══════════ DASHBOARD TAB ═══════════ -->
+  <div id="tab-dashboard">
+    <div class="metric-grid" id="dashboard-metrics"></div>
+    <div class="card">
+      <div class="card-eyebrow">Overview</div>
+      <div class="card-heading">Recent Projects</div>
+      <div id="dashboard-recent"></div>
+    </div>
+  </div>
+
   <!-- ═══════════ NEW PROJECT TAB ═══════════ -->
-  <div id="tab-new">
+  <div id="tab-new" style="display:none;">
+   <div class="wizard-wrap">
 
     <!-- Progress bar -->
     <div class="progress-wrap">
@@ -874,6 +911,7 @@
       </div>
     </div>
 
+   </div><!-- /wizard-wrap -->
   </div><!-- /tab-new -->
 
   <!-- ═══════════ PROJECTS TAB ═══════════ -->
@@ -881,7 +919,18 @@
     <div class="card">
       <div class="card-eyebrow">Overview</div>
       <div class="card-heading">All Projects</div>
-      <div class="proj-list" id="proj-list">
+      <div style="display:flex; gap:12px; margin-bottom:16px;">
+        <input id="proj-search" placeholder="Search by ref or client..." style="flex:1;" oninput="filterProjects()" />
+        <select id="proj-status-filter" onchange="filterProjects()" style="width:200px;">
+          <option value="">All statuses</option>
+          <option value="draft">Draft</option>
+          <option value="flags_pending">Flags pending</option>
+          <option value="flags_confirmed">Flags confirmed</option>
+          <option value="boq_ready">BOQ ready</option>
+          <option value="quotation_ready">Quotation ready</option>
+        </select>
+      </div>
+      <div id="projects-table-area">
         <div class="empty-state">
           <div class="empty-icon">📂</div>
           <p>Loading projects…</p>
@@ -974,6 +1023,7 @@
   </div>
 
 </main>
+</div><!-- /app-shell -->
 
 <script>
   const API = '';
@@ -998,13 +1048,17 @@
   function showLogin() {
     document.getElementById('view-login').style.display = 'flex';
     document.getElementById('app-header').style.display = 'none';
-    document.querySelector('main').style.display = 'none';
+    document.getElementById('app-shell').style.display = 'none';
   }
 
   async function showApp() {
+    if (localStorage.getItem('sidebarCollapsed') === '1') {
+      document.getElementById('app-sidebar').classList.add('collapsed');
+      document.querySelector('.sidebar-toggle-icon').textContent = '›';
+    }
     document.getElementById('view-login').style.display = 'none';
     document.getElementById('app-header').style.display = 'flex';
-    document.querySelector('main').style.display = 'block';
+    document.getElementById('app-shell').style.display = 'flex';
     document.getElementById('user-name').textContent = currentUser.name;
     document.getElementById('user-role').textContent = currentUser.role;
     document.getElementById('nav-admin').style.display = currentUser.role === 'admin' ? '' : 'none';
@@ -1012,6 +1066,13 @@
     await loadPriceListStatus();
     setupDragDrop();
     addRunCard();
+    showTab('dashboard');
+  }
+
+  function toggleSidebar() {
+    const collapsed = document.getElementById('app-sidebar').classList.toggle('collapsed');
+    localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0');
+    document.querySelector('.sidebar-toggle-icon').textContent = collapsed ? '›' : '‹';
   }
 
   async function doLogin() {
@@ -1056,13 +1117,13 @@
 
   // ── Tabs ──────────────────────────────────────────────────────
   function showTab(name) {
-    ['new','projects','admin'].forEach(t => {
+    ['dashboard','new','projects','admin'].forEach(t => {
       document.getElementById(`tab-${t}`).style.display = t === name ? 'block' : 'none';
     });
-    document.getElementById('nav-new').className = name === 'new' ? 'nav-pill' : 'nav-btn';
-    ['projects','admin'].forEach(t => {
-      document.getElementById(`nav-${t}`).className = t === name ? 'nav-btn active' : 'nav-btn';
+    ['dashboard','new','projects','admin'].forEach(t => {
+      document.getElementById(`nav-${t}`).classList.toggle('active', t === name);
     });
+    if (name === 'dashboard') loadDashboard();
     if (name === 'projects') loadProjects();
     if (name === 'admin') { loadSalespeopleAdmin(); loadPriceListStatus(); loadUsersAdmin(); }
   }
@@ -1445,31 +1506,85 @@
     }
   }
 
-  // ── Projects list ─────────────────────────────────────────────
-  async function loadProjects() {
-    const list = document.getElementById('proj-list');
+  // ── Dashboard ─────────────────────────────────────────────────
+  async function loadDashboard() {
     try {
       const projects = await api('GET', '/projects/');
-      if (!projects.length) {
-        list.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><p>No projects yet. Create one with the button above.</p></div>';
-        return;
-      }
-      list.innerHTML = projects.map(p => `
-        <div class="proj-item" onclick="openProject(${p.id})">
-          <div class="proj-dot" style="background:${{
-            draft:'var(--border)', reading_drawing:'var(--orange)',
-            flags_pending:'var(--orange)', flags_confirmed:'var(--brand)',
-            boq_ready:'#4CAF50', quotation_ready:'var(--green)'
-          }[p.status]||'var(--border)'}"></div>
-          <div>
-            <div class="proj-ref">${p.our_ref}</div>
-            <div class="proj-client">${p.client_name}</div>
-          </div>
-          <span class="proj-status s-${p.status}">${p.status.replace(/_/g,' ')}</span>
-        </div>`).join('');
+      renderDashboard(projects);
     } catch(e) {
-      list.innerHTML = `<div class="alert alert-error">Error loading projects: ${e.message}</div>`;
+      document.getElementById('dashboard-metrics').innerHTML =
+        `<div class="alert alert-error">Error loading dashboard: ${e.message}</div>`;
     }
+  }
+
+  function renderDashboard(projects) {
+    const now = new Date();
+    const needsAttention = projects.filter(p => p.status === 'draft' || p.status === 'flags_pending').length;
+    const quotationsReady = projects.filter(p => p.status === 'quotation_ready').length;
+    const createdThisMonth = projects.filter(p => {
+      const d = new Date(p.created_at);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }).length;
+
+    const metrics = [
+      { label: 'Total Projects', value: projects.length },
+      { label: 'Needs Attention', value: needsAttention },
+      { label: 'Quotations Ready', value: quotationsReady },
+      { label: 'Created This Month', value: createdThisMonth },
+    ];
+    document.getElementById('dashboard-metrics').innerHTML = metrics.map(m => `
+      <div class="metric-card">
+        <div class="metric-label">${m.label}</div>
+        <div class="metric-value">${m.value}</div>
+      </div>`).join('');
+
+    const recent = [...projects]
+      .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
+      .slice(0, 5);
+    document.getElementById('dashboard-recent').innerHTML = renderProjectsTable(recent, { compact: true });
+  }
+
+  // ── Projects list ─────────────────────────────────────────────
+  let allProjects = [];
+
+  function renderProjectsTable(projects, opts = {}) {
+    opts = { compact: false, ...opts };
+    if (!projects.length) {
+      return '<div class="empty-state"><div class="empty-icon">📋</div><p>No projects yet. Create one with the button above.</p></div>';
+    }
+    const rows = projects.map(p => `
+      <tr onclick="openProject(${p.id})" style="cursor:pointer;">
+        <td><strong>${p.our_ref}</strong></td>
+        <td>${p.client_name}</td>
+        <td>${p.salesperson_name || '—'}</td>
+        <td><span class="tag s-${p.status}">${p.status.replace(/_/g,' ')}</span></td>
+        <td>${new Date(p.updated_at).toLocaleDateString()}</td>
+      </tr>`).join('');
+    return `<div class="table-wrap"><table>
+      <thead><tr><th>Ref</th><th>Client</th><th>Salesperson</th><th>Status</th><th>Updated</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+  }
+
+  async function loadProjects() {
+    const area = document.getElementById('projects-table-area');
+    try {
+      allProjects = await api('GET', '/projects/');
+      filterProjects();
+    } catch(e) {
+      area.innerHTML = `<div class="alert alert-error">Error loading projects: ${e.message}</div>`;
+    }
+  }
+
+  function filterProjects() {
+    const area = document.getElementById('projects-table-area');
+    const q = (document.getElementById('proj-search')?.value || '').trim().toLowerCase();
+    const status = document.getElementById('proj-status-filter')?.value || '';
+    const filtered = allProjects.filter(p =>
+      (!q || p.our_ref.toLowerCase().includes(q) || p.client_name.toLowerCase().includes(q)) &&
+      (!status || p.status === status)
+    );
+    area.innerHTML = renderProjectsTable(filtered);
   }
 
   function openProject(id) {

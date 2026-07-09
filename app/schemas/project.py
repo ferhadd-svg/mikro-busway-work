@@ -17,6 +17,7 @@ class ProjectOut(BaseModel):
     attn: str | None
     me_consultant: str | None
     salesperson_id: int | None
+    salesperson_name: str | None = None
     status: str
     drawing_filename: str | None
     boq_filename: str | None
