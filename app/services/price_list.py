@@ -16,6 +16,37 @@ import json
 # Frame rating ladder — maps nominal to Mikro frame rating
 FRAME_LADDER = [200, 400, 630, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000]
 
+# Reverse of the parser's LABEL_MAP key prefixes (excluding "feeder", handled
+# specially in all_rates() since it has an extra earth-% suffix segment) —
+# maps a stored key prefix back to a human-readable category for display.
+_CATEGORY_PREFIX_MAP = {
+    "flange_end_box": "Flange End Box",
+    "flange_end": "Flange End",
+    "elbow": "Elbow",
+    "flexible": "Flexible Conductor",
+    "hanger_clamp": "Mounting Clamp",
+    "end_closure": "End Closure",
+    "fixed_hanger": "Fixed Hanger",
+    "spring_hanger": "Spring Hanger",
+    "plugin_hole": "Plug-in Opening",
+}
+
+
+def _strip_frame_suffix(key: str) -> str:
+    """'elbow_800' -> 'elbow'; 'flange_end_box_630' -> 'flange_end_box'."""
+    parts = key.rsplit("_", 1)
+    return parts[0] if len(parts) == 2 else key
+
+
+def _extract_trailing_int(key: str) -> Optional[int]:
+    parts = key.rsplit("_", 1)
+    if len(parts) == 2:
+        try:
+            return int(parts[1])
+        except ValueError:
+            return None
+    return None
+
 
 def resolve_frame_rating(nominal_a: int) -> int:
     """Return the Mikro frame rating for a given nominal amperage.
@@ -133,6 +164,44 @@ class PriceList:
 
     def loaded_file(self) -> Optional[str]:
         return self._loaded_file
+
+    def all_rates(self) -> list[dict]:
+        """Flatten _al/_cu/_piu/_bimetal into structured rows for display
+        only — NOT used by any lookup method above, so boq_builder.py and
+        the /lookup endpoints are unaffected by this method's behavior."""
+        rows: list[dict] = []
+        for material, store in (("AL", self._al), ("CU", self._cu)):
+            for key, rate in store.items():
+                if key.startswith("feeder_"):
+                    parts = key.split("_")
+                    if len(parts) == 3:
+                        rows.append({
+                            "category": "Feeder", "material": material,
+                            "frame_a": int(parts[1]), "earth_pct": int(parts[2]),
+                            "rate": rate,
+                        })
+                    continue
+                cat = _CATEGORY_PREFIX_MAP.get(_strip_frame_suffix(key))
+                if cat:
+                    rows.append({
+                        "category": cat, "material": material,
+                        "frame_a": _extract_trailing_int(key), "rate": rate,
+                    })
+
+        for key, rate in self._piu.items():
+            parts = key.split("_")
+            if len(parts) == 3:
+                rows.append({
+                    "category": "PIU", "rating_a": int(parts[1]), "ka": int(parts[2]),
+                    "rate": rate,
+                })
+
+        for key, rate in self._bimetal.items():
+            parts = key.split("_")
+            if len(parts) == 2:
+                rows.append({"category": "Bi-Metal Plate", "frame_a": int(parts[1]), "rate": rate})
+
+        return rows
 
     # ------------------------------------------------------------------ #
     #  Internal parsers — xls / xlsx                                      #

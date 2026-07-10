@@ -949,6 +949,15 @@
         Upload price list (.xls / .xlsx)
         <input type="file" accept=".xls,.xlsx" style="display:none;" onchange="uploadPriceList(this)" />
       </label>
+
+      <div class="divider"></div>
+      <div class="section-label">Version history</div>
+      <div id="pl-versions-list" style="margin-bottom:20px;"></div>
+
+      <div class="divider"></div>
+      <div class="section-label">Browse rates</div>
+      <input id="pl-rate-search" placeholder="Search by category or material..." style="margin-bottom:12px;" oninput="filterRates()" />
+      <div id="pl-rates-list"></div>
     </div>
 
     <div class="card">
@@ -1156,7 +1165,7 @@
     });
     if (name === 'dashboard') loadDashboard();
     if (name === 'projects') loadProjects();
-    if (name === 'admin') { loadSalespeopleAdmin(); loadPriceListStatus(); loadUsersAdmin(); }
+    if (name === 'admin') { loadSalespeopleAdmin(); loadPriceListStatus(); loadUsersAdmin(); loadPriceListVersions(); loadPriceListRates(); }
   }
 
   // ── Steps ─────────────────────────────────────────────────────
@@ -1644,10 +1653,85 @@
     const fd = new FormData();
     fd.append('file', file);
     try {
-      await api('POST', '/price-list/upload', fd);
+      const res = await api('POST', '/price-list/upload', fd);
       await loadPriceListStatus();
-      alert_('success', `Price list '${file.name}' uploaded and activated.`);
+      await loadPriceListVersions();
+      await loadPriceListRates();
+      alert_('success', `Price list '${file.name}' uploaded and activated (${res.row_count} rates parsed).`);
     } catch(e) { alert_('error', e.message); }
+  }
+
+  // ── Price list version history ─────────────────────────────────
+  async function loadPriceListVersions() {
+    const el = document.getElementById('pl-versions-list');
+    if (!el) return;
+    try {
+      const versions = await api('GET', '/price-list/versions');
+      if (!versions.length) { el.innerHTML = '<p style="color:var(--muted); font-size:.85rem;">No upload history yet.</p>'; return; }
+      el.innerHTML = `<div class="table-wrap"><table>
+        <thead><tr><th>Filename</th><th>Uploaded by</th><th>Uploaded at</th><th>Rates parsed</th><th>Status</th><th></th></tr></thead>
+        <tbody>${versions.map(v => `<tr>
+          <td><strong>${v.original_filename}</strong></td>
+          <td>${v.uploaded_by_name || '—'}</td>
+          <td>${new Date(v.uploaded_at).toLocaleString()}</td>
+          <td>${v.row_count}</td>
+          <td><span class="tag" style="background:${v.is_active?'var(--green-light)':'var(--grey-bg)'}; color:${v.is_active?'var(--green)':'var(--muted)'};">${v.is_active?'Active':'Inactive'}</span></td>
+          <td>${v.is_active ? '' : `<button class="btn btn-outline btn-sm" onclick="reactivateVersion(${v.id})">Reactivate</button>`}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+    } catch(e) { el.innerHTML = `<div class="alert alert-error">Error: ${e.message}</div>`; }
+  }
+
+  async function reactivateVersion(id) {
+    if (!confirm('Reactivate this price list version? It will become the active price list for all future quotations immediately.')) return;
+    try {
+      await api('POST', `/price-list/versions/${id}/reactivate`);
+      await loadPriceListStatus();
+      await loadPriceListVersions();
+      await loadPriceListRates();
+      alert_('success', 'Price list version reactivated.');
+    } catch(e) { alert_('error', e.message); }
+  }
+
+  // ── Price list rate browser ────────────────────────────────────
+  let allRates = [];
+
+  function renderRatesTable(rates) {
+    if (!rates.length) {
+      return '<div class="empty-state"><p>No rates found.</p></div>';
+    }
+    const rows = rates.map(r => `
+      <tr>
+        <td>${r.category}</td>
+        <td>${r.material || '—'}</td>
+        <td>${r.frame_a ?? r.rating_a ?? '—'}</td>
+        <td>${r.earth_pct != null ? r.earth_pct + '%' : (r.ka != null ? r.ka + 'kA' : '—')}</td>
+        <td>RM ${r.rate.toFixed(2)}</td>
+      </tr>`).join('');
+    return `<div class="table-wrap"><table>
+      <thead><tr><th>Category</th><th>Material</th><th>Frame / Rating (A)</th><th>Earth% / kA</th><th>Rate (RM)</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+  }
+
+  async function loadPriceListRates() {
+    const el = document.getElementById('pl-rates-list');
+    if (!el) return;
+    try {
+      allRates = await api('GET', '/price-list/rates');
+      filterRates();
+    } catch(e) {
+      el.innerHTML = `<div class="alert alert-error">Error loading rates: ${e.message}</div>`;
+    }
+  }
+
+  function filterRates() {
+    const el = document.getElementById('pl-rates-list');
+    const q = (document.getElementById('pl-rate-search')?.value || '').trim().toLowerCase();
+    const filtered = allRates.filter(r =>
+      !q || r.category.toLowerCase().includes(q) || (r.material || '').toLowerCase().includes(q)
+    );
+    el.innerHTML = renderRatesTable(filtered);
   }
 
   async function loadSalespeopleAdmin() {
