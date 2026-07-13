@@ -13,6 +13,7 @@ class Project(Base):
     attn: Mapped[str | None] = mapped_column(String(200), nullable=True)
     me_consultant: Mapped[str | None] = mapped_column(String(200), nullable=True)
     salesperson_id: Mapped[int | None] = mapped_column(ForeignKey("salespeople.id"), nullable=True)
+    customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"), nullable=True)
 
     # Drawing
     drawing_filename: Mapped[str | None] = mapped_column(String(300), nullable=True)

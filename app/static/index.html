@@ -689,6 +689,9 @@
     <button class="side-link" id="nav-projects" onclick="showTab('projects')">
       <span class="side-icon">▤</span><span class="side-label">Projects</span>
     </button>
+    <button class="side-link" id="nav-customers" onclick="showTab('customers')">
+      <span class="side-icon">🏢</span><span class="side-label">Customers</span>
+    </button>
     <button class="side-link" id="nav-admin" onclick="showTab('admin')">
       <span class="side-icon">⚙</span><span class="side-label">Admin</span>
     </button>
@@ -759,7 +762,8 @@
           </div>
           <div class="form-group full">
             <label>Client Name <span class="req">*</span></label>
-            <input id="client-name" placeholder="e.g. IOI Properties Group Sdn Bhd" />
+            <input id="client-name" list="customer-names" placeholder="e.g. IOI Properties Group Sdn Bhd" />
+            <datalist id="customer-names"></datalist>
           </div>
           <div class="form-group">
             <label>Attention (Attn)</label>
@@ -939,6 +943,107 @@
     </div>
   </div>
 
+  <!-- ═══════════ CUSTOMERS TAB ═══════════ -->
+  <div id="tab-customers" style="display:none;">
+
+    <div id="customers-list-view">
+      <div class="card">
+        <div class="card-eyebrow">CRM</div>
+        <div class="card-heading">Customers</div>
+        <div style="display:flex; gap:12px; margin-bottom:16px;">
+          <input id="customer-search" placeholder="Search by company name..." style="flex:1;" oninput="filterCustomers()" />
+        </div>
+        <div id="customers-table-area">
+          <div class="empty-state">
+            <div class="empty-icon">🏢</div>
+            <p>Loading customers…</p>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="section-label">Add customer</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Company Name <span class="req">*</span></label>
+            <input id="new-customer-name" placeholder="e.g. IOI Properties Group Sdn Bhd" />
+          </div>
+          <div class="form-group">
+            <label>Address</label>
+            <input id="new-customer-address" placeholder="Optional" />
+          </div>
+        </div>
+        <button class="btn btn-primary" style="margin-top:16px;" onclick="addCustomer()">Add Customer</button>
+      </div>
+    </div>
+
+    <div id="customer-detail-view" style="display:none;">
+      <button class="btn btn-outline" style="margin-bottom:16px;" onclick="backToCustomerList()">← Back to customers</button>
+
+      <div class="card">
+        <div class="card-eyebrow">CRM</div>
+        <div class="card-heading" id="customer-detail-name"></div>
+        <div id="customer-detail-address" style="color:var(--muted); font-size:.88rem; margin-bottom:16px;"></div>
+        <div class="section-label" style="margin-top:0;">Edit company</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Company Name</label>
+            <input id="edit-customer-name" />
+          </div>
+          <div class="form-group">
+            <label>Address</label>
+            <input id="edit-customer-address" />
+          </div>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:16px;">
+          <button class="btn btn-primary btn-sm" onclick="saveCustomerEdit()">Save changes</button>
+          <button class="btn btn-outline btn-sm" id="customer-archive-btn" onclick="toggleCustomerActive()">Archive</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-eyebrow">CRM</div>
+        <div class="card-heading">Contacts</div>
+        <div id="customer-contacts-list" style="margin-bottom:20px;"></div>
+        <div class="divider"></div>
+        <div class="section-label">Add contact</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Name <span class="req">*</span></label>
+            <input id="new-contact-name" placeholder="e.g. Ir. Lim Wei Ming" />
+          </div>
+          <div class="form-group">
+            <label>Title</label>
+            <input id="new-contact-title" placeholder="e.g. Project Manager" />
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input id="new-contact-email" type="email" placeholder="name@company.com" />
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <input id="new-contact-phone" placeholder="+60 12-345 6789" />
+          </div>
+        </div>
+        <button class="btn btn-primary" style="margin-top:16px;" onclick="addContact()">Add Contact</button>
+      </div>
+
+      <div class="card">
+        <div class="card-eyebrow">CRM</div>
+        <div class="card-heading">Activity Log</div>
+        <div class="form-group" style="margin-bottom:12px;">
+          <textarea id="new-note-body" placeholder="Log a call, meeting, or update..." rows="3"></textarea>
+        </div>
+        <button class="btn btn-secondary" style="margin-bottom:20px;" onclick="addNote()">Add Note</button>
+        <div id="customer-notes-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-eyebrow">CRM</div>
+        <div class="card-heading">Projects</div>
+        <div id="customer-projects-list"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ═══════════ ADMIN TAB ═══════════ -->
   <div id="tab-admin" style="display:none;">
     <div class="card">
@@ -1104,6 +1209,7 @@
     document.getElementById('nav-admin').style.display = currentUser.role === 'admin' ? '' : 'none';
     await loadSalespeople();
     await loadPriceListStatus();
+    await loadCustomers();
     setupDragDrop();
     addRunCard();
     showTab('dashboard');
@@ -1157,14 +1263,15 @@
 
   // ── Tabs ──────────────────────────────────────────────────────
   function showTab(name) {
-    ['dashboard','new','projects','admin'].forEach(t => {
+    ['dashboard','new','projects','customers','admin'].forEach(t => {
       document.getElementById(`tab-${t}`).style.display = t === name ? 'block' : 'none';
     });
-    ['dashboard','new','projects','admin'].forEach(t => {
+    ['dashboard','new','projects','customers','admin'].forEach(t => {
       document.getElementById(`nav-${t}`).classList.toggle('active', t === name);
     });
     if (name === 'dashboard') loadDashboard();
     if (name === 'projects') loadProjects();
+    if (name === 'customers') { backToCustomerList(); loadCustomers(); }
     if (name === 'admin') { loadSalespeopleAdmin(); loadPriceListStatus(); loadUsersAdmin(); loadPriceListVersions(); loadPriceListRates(); }
   }
 
@@ -1631,6 +1738,169 @@
     currentProjectId = id;
     showTab('new');
     alert_('info', `Project ${id} loaded. Use the steps above to continue.`);
+  }
+
+  // ── Customers ─────────────────────────────────────────────────
+  let allCustomers = [];
+  let currentCustomerId = null;
+
+  async function loadCustomers() {
+    const area = document.getElementById('customers-table-area');
+    try {
+      allCustomers = await api('GET', '/customers/');
+      filterCustomers();
+      const dl = document.getElementById('customer-names');
+      if (dl) dl.innerHTML = allCustomers.map(c => `<option value="${c.company_name}">`).join('');
+    } catch(e) {
+      if (area) area.innerHTML = `<div class="alert alert-error">Error loading customers: ${e.message}</div>`;
+    }
+  }
+
+  function renderCustomersTable(customers) {
+    if (!customers.length) {
+      return '<div class="empty-state"><div class="empty-icon">🏢</div><p>No customers yet.</p></div>';
+    }
+    const rows = customers.map(c => `
+      <tr onclick="showCustomerDetail(${c.id})" style="cursor:pointer;">
+        <td><strong>${c.company_name}</strong></td>
+        <td>${c.primary_contact_name || '—'}</td>
+        <td>${c.project_count}</td>
+        <td><span class="tag" style="background:${c.is_active?'var(--green-light)':'var(--grey-bg)'}; color:${c.is_active?'var(--green)':'var(--muted)'};">${c.is_active?'Active':'Archived'}</span></td>
+      </tr>`).join('');
+    return `<div class="table-wrap"><table>
+      <thead><tr><th>Company</th><th>Primary Contact</th><th>Projects</th><th>Status</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+  }
+
+  function filterCustomers() {
+    const area = document.getElementById('customers-table-area');
+    const q = (document.getElementById('customer-search')?.value || '').trim().toLowerCase();
+    const filtered = allCustomers.filter(c => !q || c.company_name.toLowerCase().includes(q));
+    area.innerHTML = renderCustomersTable(filtered);
+  }
+
+  async function addCustomer() {
+    const company_name = document.getElementById('new-customer-name').value.trim();
+    const address = document.getElementById('new-customer-address').value.trim();
+    if (!company_name) { alert_('error', 'Company name is required.'); return; }
+    try {
+      await api('POST', '/customers/', { company_name, address: address || null });
+      ['new-customer-name','new-customer-address'].forEach(id => document.getElementById(id).value = '');
+      await loadCustomers();
+      alert_('success', `${company_name} added.`);
+    } catch(e) { alert_('error', e.message); }
+  }
+
+  function backToCustomerList() {
+    currentCustomerId = null;
+    document.getElementById('customer-detail-view').style.display = 'none';
+    document.getElementById('customers-list-view').style.display = 'block';
+  }
+
+  async function showCustomerDetail(id) {
+    currentCustomerId = id;
+    try {
+      const c = await api('GET', `/customers/${id}`);
+      document.getElementById('customers-list-view').style.display = 'none';
+      document.getElementById('customer-detail-view').style.display = 'block';
+
+      document.getElementById('customer-detail-name').textContent = c.company_name;
+      document.getElementById('customer-detail-address').textContent = c.address || '';
+      document.getElementById('edit-customer-name').value = c.company_name;
+      document.getElementById('edit-customer-address').value = c.address || '';
+      document.getElementById('customer-archive-btn').textContent = c.is_active ? 'Archive' : 'Reactivate';
+
+      const contactsEl = document.getElementById('customer-contacts-list');
+      contactsEl.innerHTML = !c.contacts.length
+        ? '<p style="color:var(--muted); font-size:.85rem;">No contacts yet.</p>'
+        : `<div class="table-wrap"><table>
+            <thead><tr><th>Name</th><th>Title</th><th>Email</th><th>Phone</th><th></th><th></th></tr></thead>
+            <tbody>${c.contacts.map(ct => `<tr>
+              <td><strong>${ct.name}</strong>${ct.is_primary ? ' <span class="tag" style="background:var(--brand-light); color:var(--brand);">Primary</span>' : ''}</td>
+              <td>${ct.title || '—'}</td><td>${ct.email || '—'}</td><td>${ct.phone || '—'}</td>
+              <td>${ct.is_primary ? '' : `<button class="btn btn-outline btn-sm" onclick="makeContactPrimary(${ct.id})">Make primary</button>`}</td>
+              <td><button class="btn btn-outline btn-sm" onclick="deleteContact(${ct.id})">Remove</button></td>
+            </tr>`).join('')}</tbody>
+          </table></div>`;
+
+      const notesEl = document.getElementById('customer-notes-list');
+      notesEl.innerHTML = !c.notes.length
+        ? '<p style="color:var(--muted); font-size:.85rem;">No notes yet.</p>'
+        : c.notes.map(n => `
+            <div style="border-bottom:1px solid var(--border); padding:10px 0;">
+              <div style="font-size:.8rem; color:var(--muted); margin-bottom:4px;">${n.author_name || 'Unknown'} · ${new Date(n.created_at).toLocaleString()}</div>
+              <div>${n.body}</div>
+            </div>`).join('');
+
+      document.getElementById('customer-projects-list').innerHTML = renderProjectsTable(c.projects, { compact: true });
+    } catch(e) { alert_('error', e.message); backToCustomerList(); }
+  }
+
+  async function saveCustomerEdit() {
+    if (!currentCustomerId) return;
+    const company_name = document.getElementById('edit-customer-name').value.trim();
+    const address = document.getElementById('edit-customer-address').value.trim();
+    if (!company_name) { alert_('error', 'Company name is required.'); return; }
+    try {
+      await api('PATCH', `/customers/${currentCustomerId}`, { company_name, address: address || null });
+      await showCustomerDetail(currentCustomerId);
+      await loadCustomers();
+      alert_('success', 'Customer updated.');
+    } catch(e) { alert_('error', e.message); }
+  }
+
+  async function toggleCustomerActive() {
+    if (!currentCustomerId) return;
+    const nowArchiving = document.getElementById('customer-archive-btn').textContent === 'Archive';
+    try {
+      await api('PATCH', `/customers/${currentCustomerId}`, { is_active: !nowArchiving });
+      await showCustomerDetail(currentCustomerId);
+      await loadCustomers();
+    } catch(e) { alert_('error', e.message); }
+  }
+
+  async function addContact() {
+    if (!currentCustomerId) return;
+    const name = document.getElementById('new-contact-name').value.trim();
+    const title = document.getElementById('new-contact-title').value.trim();
+    const email = document.getElementById('new-contact-email').value.trim();
+    const phone = document.getElementById('new-contact-phone').value.trim();
+    if (!name) { alert_('error', 'Contact name is required.'); return; }
+    try {
+      await api('POST', `/customers/${currentCustomerId}/contacts`, {
+        name, title: title || null, email: email || null, phone: phone || null,
+      });
+      ['new-contact-name','new-contact-title','new-contact-email','new-contact-phone'].forEach(id => document.getElementById(id).value = '');
+      await showCustomerDetail(currentCustomerId);
+    } catch(e) { alert_('error', e.message); }
+  }
+
+  async function makeContactPrimary(contactId) {
+    if (!currentCustomerId) return;
+    try {
+      await api('PATCH', `/customers/${currentCustomerId}/contacts/${contactId}`, { is_primary: true });
+      await showCustomerDetail(currentCustomerId);
+    } catch(e) { alert_('error', e.message); }
+  }
+
+  async function deleteContact(contactId) {
+    if (!currentCustomerId) return;
+    try {
+      await api('DELETE', `/customers/${currentCustomerId}/contacts/${contactId}`);
+      await showCustomerDetail(currentCustomerId);
+    } catch(e) { alert_('error', e.message); }
+  }
+
+  async function addNote() {
+    if (!currentCustomerId) return;
+    const body = document.getElementById('new-note-body').value.trim();
+    if (!body) { alert_('error', 'Note cannot be empty.'); return; }
+    try {
+      await api('POST', `/customers/${currentCustomerId}/notes`, { body });
+      document.getElementById('new-note-body').value = '';
+      await showCustomerDetail(currentCustomerId);
+    } catch(e) { alert_('error', e.message); }
   }
 
   // ── Admin ─────────────────────────────────────────────────────
