@@ -28,6 +28,7 @@ from app.services.price_list import price_list
 from app.services.boq_builder import build_boq
 from app.services.quotation_builder import build_quotation
 from app.services.auth import get_current_user, require_role
+from app.services.customers import get_or_create_customer
 from app.config import settings
 
 # Every endpoint in this router requires a logged-in user (any role) — see
@@ -40,9 +41,10 @@ router = APIRouter(prefix="/projects", tags=["Projects"], dependencies=[Depends(
 #  CRUD                                                               #
 # ------------------------------------------------------------------ #
 
-@router.get("/", response_model=list[ProjectOut])
-def list_projects(db: Session = Depends(get_db)):
-    projects = db.query(Project).order_by(Project.created_at.desc()).all()
+def _enrich_projects(projects: list[Project], db: Session) -> list[ProjectOut]:
+    """Shared salesperson_name enrichment — also used by
+    app/routers/customers.py's customer-detail endpoint so the two never
+    drift into different project-summary shapes."""
     sp_names = dict(db.query(Salesperson.id, Salesperson.name).all())
     out = []
     for p in projects:
@@ -52,12 +54,19 @@ def list_projects(db: Session = Depends(get_db)):
     return out
 
 
+@router.get("/", response_model=list[ProjectOut])
+def list_projects(db: Session = Depends(get_db)):
+    projects = db.query(Project).order_by(Project.created_at.desc()).all()
+    return _enrich_projects(projects, db)
+
+
 @router.post("/", response_model=ProjectOut, status_code=201)
 def create_project(data: ProjectCreate, db: Session = Depends(get_db)):
     existing = db.query(Project).filter(Project.our_ref == data.our_ref).first()
     if existing:
         raise HTTPException(400, f"Project ref '{data.our_ref}' already exists.")
-    project = Project(**data.model_dump())
+    customer = get_or_create_customer(db, data.client_name, data.attn)
+    project = Project(**data.model_dump(), customer_id=customer.id)
     db.add(project)
     db.commit()
     db.refresh(project)

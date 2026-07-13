@@ -8,7 +8,9 @@ import secrets
 from app.database import engine, Base, SessionLocal
 from app.models.salesperson import Salesperson
 from app.models.user import User
+from app.models.project import Project
 from app.services.auth import hash_password
+from app.services.customers import get_or_create_customer
 
 DEFAULT_SALESPEOPLE = [
     {
@@ -52,6 +54,7 @@ def seed():
         db.close()
 
     seed_admin_user()
+    seed_customers_from_projects()
 
 
 def seed_admin_user():
@@ -78,6 +81,27 @@ def seed_admin_user():
         print("[seed] This password is shown ONLY ONCE. Log in and change it")
         print("[seed] immediately via the account menu (Change Password).")
         print("=" * 60)
+    finally:
+        db.close()
+
+
+def seed_customers_from_projects():
+    """Idempotent: only touches Project rows where customer_id IS NULL, so
+    re-running on every deploy (buildCommand already runs `python -m
+    app.seed` every deploy) is safe and self-healing."""
+    db = SessionLocal()
+    try:
+        projects = db.query(Project).filter(Project.customer_id.is_(None)).all()
+        if not projects:
+            print("[seed] No projects need customer backfill.")
+            return
+        count = 0
+        for p in projects:
+            customer = get_or_create_customer(db, p.client_name, p.attn)
+            p.customer_id = customer.id
+            count += 1
+        db.commit()
+        print(f"[seed] Backfilled customer_id for {count} project(s).")
     finally:
         db.close()
 

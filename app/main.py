@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from app.database import engine, Base
 from app.config import settings
 from app.services.price_list import price_list
-from app.routers import salespeople, projects, price_list as price_list_router, auth
+from app.routers import salespeople, projects, price_list as price_list_router, auth, customers
 
 
 @asynccontextmanager
@@ -58,6 +58,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(salespeople.router)
 app.include_router(projects.router)
+app.include_router(customers.router)
 app.include_router(price_list_router.router)
 
 # Serve the browser UI
