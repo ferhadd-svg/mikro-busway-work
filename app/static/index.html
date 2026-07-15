@@ -400,6 +400,13 @@
     .tag-riser   { background: var(--green-light); color: var(--green); }
     .tag-al      { background: #fefce8; color: #5c4a00; }
     .tag-cu      { background: #f3e8ff; color: #5b1a9a; }
+    .tag-conf-high { background: var(--green-light); color: var(--green); }
+    .tag-conf-med  { background: var(--orange-light); color: var(--orange); }
+    .tag-conf-low  { background: var(--red-light); color: var(--red); }
+    .run-edit-input, .run-edit-select {
+      width: 100%; min-width: 64px; padding: 4px 6px; font-size: .82rem;
+      border: 1px solid var(--border); border-radius: 6px; background: #fff;
+    }
 
     /* ── Totals ─────────────────────────────────────────────── */
     .totals-block {
@@ -873,15 +880,13 @@
           <table>
             <thead>
               <tr>
-                <th>Run</th><th>Type</th><th>Routing</th><th>Rating</th>
+                <th>Run</th><th>Confidence</th><th>Type</th><th>Routing</th><th>Rating</th>
                 <th>Frame</th><th>Mat.</th><th>Earth%</th><th>Length</th><th>PIU ratings</th>
               </tr>
             </thead>
             <tbody id="runs-table"></tbody>
           </table>
         </div>
-
-        <div id="run-overrides" style="margin-top:20px;"></div>
 
         <div style="margin-top:28px;">
           <button class="btn btn-primary" onclick="submitFlags()">Confirm &amp; Build BOQ →</button>
@@ -1175,6 +1180,7 @@
   let currentProjectId = null;
   let extractionData = null;
   let currentUser = null;
+  let runOverrides = {};
 
   window.addEventListener('DOMContentLoaded', async () => {
     await checkAuth();
@@ -1525,49 +1531,73 @@
       ? nonLme.map(f => `<div class="flag-item"><div class="flag-scope">${f.scope||'global'}</div><div>${f.message}</div></div>`).join('')
       : '<div style="color:var(--green); font-size:.85rem; font-weight:600;">✓ No flags — drawing read cleanly.</div>';
 
+    runOverrides = {};
     const tbody = document.getElementById('runs-table');
     tbody.innerHTML = (extraction.runs||[]).map(r => {
-      const typeTag = r.run_type==='TX-MSB'?'tag-txmsb': r.run_type==='MSB-Riser'?'tag-msbriser':'tag-riser';
-      const matTag  = r.material==='AL'?'tag-al':'tag-cu';
+      const n = (r.flags||[]).length;
+      const confCls = n===0 ? 'tag-conf-high' : n<=2 ? 'tag-conf-med' : 'tag-conf-low';
+      const confLabel = n===0 ? 'High' : n<=2 ? 'Medium' : 'Low';
+      const piuStr = (r.piu_ratings||[]).join(', ');
       return `<tr>
         <td><strong>${r.run_id}</strong></td>
-        <td><span class="tag ${typeTag}">${r.run_type}</span></td>
-        <td>${r.routing}</td>
-        <td>${r.rating_a}A</td>
-        <td>${r.frame_rating_a}A</td>
-        <td><span class="tag ${matTag}">${r.material}</span></td>
-        <td>${r.earth_pct}%E</td>
-        <td>${r.length_m!==null ? r.length_m+' m' : '<em style="color:var(--orange)">unknown</em>'}</td>
-        <td>${(r.piu_ratings||[]).join(', ')||'—'}</td>
+        <td><span class="tag ${confCls}" title="${n} flag(s) on this run">${confLabel}</span></td>
+        <td>
+          <select class="run-edit-select" data-run="${r.run_id}" data-field="run_type" onchange="onRunFieldChange(this)">
+            ${['TX-MSB','MSB-Riser','RISER'].map(t => `<option value="${t}" ${t===r.run_type?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </td>
+        <td><input class="run-edit-input" type="text" data-run="${r.run_id}" data-field="routing" value="${r.routing}" onchange="onRunFieldChange(this)" /></td>
+        <td><input class="run-edit-input" type="number" data-run="${r.run_id}" data-field="rating_a" value="${r.rating_a}" onchange="onRunFieldChange(this)" /></td>
+        <td>${r.frame_rating_a}A <span style="color:var(--muted); font-size:.75rem;">(auto)</span></td>
+        <td>
+          <select class="run-edit-select" data-run="${r.run_id}" data-field="material" onchange="onRunFieldChange(this)">
+            ${['AL','CU'].map(m => `<option value="${m}" ${m===r.material?'selected':''}>${m}</option>`).join('')}
+          </select>
+        </td>
+        <td>
+          <select class="run-edit-select" data-run="${r.run_id}" data-field="earth_pct" onchange="onRunFieldChange(this)">
+            ${[50,100].map(e => `<option value="${e}" ${e===r.earth_pct?'selected':''}>${e}%</option>`).join('')}
+          </select>
+        </td>
+        <td><input class="run-edit-input" type="number" step="0.1" min="0" data-run="${r.run_id}" data-field="length_m"
+              value="${r.length_m!==null ? r.length_m : ''}" placeholder="metres" onchange="onRunFieldChange(this)" /></td>
+        <td><input class="run-edit-input" type="text" data-run="${r.run_id}" data-field="piu_ratings" value="${piuStr}" placeholder="e.g. 26, 63" onchange="onRunFieldChange(this)" /></td>
       </tr>`;
     }).join('');
+  }
 
-    const overrideSection = document.getElementById('run-overrides');
-    const unknownRuns = (extraction.runs||[]).filter(r => r.length_m===null);
-    overrideSection.innerHTML = unknownRuns.length ? `
-      <div class="section-label">Enter missing feeder lengths</div>
-      <div class="form-grid three">
-        ${unknownRuns.map(r => `
-          <div class="form-group">
-            <label>${r.run_id} — ${r.routing}</label>
-            <input type="number" id="len-${r.run_id}" placeholder="metres" step="0.1" min="0" />
-          </div>`).join('')}
-      </div>` : '';
+  function onRunFieldChange(el) {
+    const runId = el.dataset.run, field = el.dataset.field;
+    const original = (extractionData?.extraction?.runs||[]).find(r => r.run_id === runId);
+    if (!original) return;
+    let val = el.value;
+    if (['rating_a','earth_pct'].includes(field)) val = parseInt(val);
+    if (field === 'length_m') val = val === '' ? null : parseFloat(val);
+    if (field === 'piu_ratings') val = val.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+
+    const unchanged = field === 'piu_ratings'
+      ? JSON.stringify(val) === JSON.stringify(original[field])
+      : val === original[field];
+
+    if (!runOverrides[runId]) runOverrides[runId] = {};
+    if (unchanged) {
+      delete runOverrides[runId][field];
+      if (!Object.keys(runOverrides[runId]).length) delete runOverrides[runId];
+    } else {
+      runOverrides[runId][field] = val;
+    }
   }
 
   async function submitFlags() {
     const lme    = parseFloat(document.getElementById('lme-usd').value);
     const usdMyr = parseFloat(document.getElementById('usd-myr').value);
     if (!lme || !usdMyr) { alert_('error', 'Please enter the LME rate and USD→MYR exchange rate.'); return; }
-    const runOverrides = {};
-    if (extractionData?.extraction) {
-      for (const r of extractionData.extraction.runs||[]) {
-        if (r.length_m===null) {
-          const val = parseFloat(document.getElementById(`len-${r.run_id}`)?.value);
-          if (val > 0) runOverrides[r.run_id] = { length_m: val };
-        }
-      }
-    }
+    const missingLength = (extractionData?.extraction?.runs||[]).some(r => {
+      const override = runOverrides[r.run_id]?.length_m;
+      const effective = override !== undefined ? override : r.length_m;
+      return effective === null || effective === undefined;
+    });
+    if (missingLength) { alert_('error', 'Please enter a length for every run before continuing.'); return; }
     try {
       await api('POST', `/projects/${currentProjectId}/flags`, {
         lme_usd_per_mt: lme, usd_to_myr: usdMyr,
