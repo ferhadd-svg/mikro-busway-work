@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Literal
 import datetime
 
 
@@ -23,7 +24,18 @@ class ProjectOut(BaseModel):
     drawing_filename: str | None
     boq_filename: str | None
     quotation_filename: str | None
+    quoted_value_myr: float | None = None
+    outcome: str | None = None
+    outcome_value_myr: float | None = None
+    outcome_notes: str | None = None
+    outcome_recorded_at: datetime.datetime | None = None
     created_at: datetime.datetime
     updated_at: datetime.datetime
 
     model_config = {"from_attributes": True}
+
+
+class ProjectOutcomeUpdate(BaseModel):
+    outcome: Literal["won", "lost"] | None
+    outcome_value_myr: float | None = None
+    outcome_notes: str | None = None

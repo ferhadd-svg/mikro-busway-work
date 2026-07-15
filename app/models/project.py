@@ -35,6 +35,15 @@ class Project(Base):
     boq_filename: Mapped[str | None] = mapped_column(String(300), nullable=True)
     quotation_filename: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
+    # Persisted grand total from the last generated quotation
+    quoted_value_myr: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Win/loss outcome — orthogonal to `status`, only settable once quotation_ready
+    outcome: Mapped[str | None] = mapped_column(String(10), nullable=True)  # "won" | "lost" | None
+    outcome_value_myr: Mapped[float | None] = mapped_column(Float, nullable=True)
+    outcome_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    outcome_recorded_at: Mapped[datetime.datetime | None] = mapped_column(nullable=True)
+
     created_at: Mapped[datetime.datetime] = mapped_column(
         default=datetime.datetime.utcnow
     )
