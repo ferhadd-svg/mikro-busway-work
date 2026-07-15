@@ -218,7 +218,7 @@ class PriceList:
                 self._cu = _parse_price_sheet_xls(sheet)
             elif "piu" in sn:
                 self._piu = _parse_piu_sheet_xls(sheet)
-            elif "bi metal" in sn or "bimetal" in sn:
+            elif "bi metal" in sn or "bi-metal" in sn or "bimetal" in sn:
                 self._bimetal = _parse_bimetal_sheet_xls(sheet)
 
     def _load_xlsx(self, path: Path) -> None:
@@ -232,7 +232,7 @@ class PriceList:
                 self._cu = _parse_price_sheet_xlsx(ws)
             elif "piu" in sn:
                 self._piu = _parse_piu_sheet_xlsx(ws)
-            elif "bi metal" in sn or "bimetal" in sn:
+            elif "bi metal" in sn or "bi-metal" in sn or "bimetal" in sn:
                 self._bimetal = _parse_bimetal_sheet_xlsx(ws)
 
 
@@ -290,17 +290,38 @@ def _to_float(v) -> Optional[float]:
         return None
 
 
-def _extract_amperage(text: str) -> Optional[int]:
+def _extract_amperage(value) -> Optional[int]:
+    """Extract a single amperage value from a header/label cell. Handles
+    text cells ("400A") as well as numeric cells that Excel/xlrd/openpyxl
+    hand back as plain int/float (e.g. 800.0) with no "A" suffix at all —
+    str(800.0) == "800.0" fails both text regexes below because of the
+    decimal point, so numeric cells must be checked directly first."""
     import re
-    m = re.search(r"(\d{2,5})\s*[Aa]", str(text))
+    if isinstance(value, (int, float)):
+        v = int(round(value))
+        return v if 100 <= v <= 9999 else None
+    text = str(value)
+    m = re.search(r"(\d{2,5})\s*[Aa]", text)
     if m:
         return int(m.group(1))
-    m = re.search(r"^\s*(\d{2,5})\s*$", str(text))
+    m = re.search(r"^\s*(\d{2,5})\s*$", text)
     if m:
         v = int(m.group(1))
         if 100 <= v <= 9999:
             return v
     return None
+
+
+def _extract_upper_amperage(value) -> Optional[int]:
+    """For range-style row labels like "32A - 100A" returns the upper bound
+    (100) — the correct key for PriceList.piu()'s "nearest band, rounded up"
+    fallback lookup. For a single label like "630A (c/w busbar)" returns
+    that value. Falls back to _extract_amperage's numeric-cell handling."""
+    import re
+    if isinstance(value, (int, float)):
+        return _extract_amperage(value)
+    matches = re.findall(r"(\d{2,5})\s*[Aa]", str(value))
+    return int(matches[-1]) if matches else None
 
 
 def _parse_price_sheet(rows: list) -> dict:
@@ -316,7 +337,7 @@ def _parse_price_sheet(rows: list) -> dict:
     for i, row in enumerate(rows):
         found = []
         for j, cell in enumerate(row):
-            a = _extract_amperage(str(cell))
+            a = _extract_amperage(cell)
             if a and a in FRAME_LADDER:
                 found.append((j, a))
         if len(found) >= 3:
@@ -343,41 +364,33 @@ def _parse_price_sheet(rows: list) -> dict:
         "plugin_hole": ["plug-in hole", "plugin hole", "plug in hole", "plug-in opening"],
     }
 
-    current_section = None
-    last_feeder_row = False
-
     for row in rows[header_row_idx + 1:]:
         label = str(row[0]).strip().lower() if row else ""
 
-        # Detect feeder sub-rows for earth %
+        # Feeder rows carry their earth-% qualifier in the SAME row label
+        # (e.g. "Feeder 3P (4W) + 50%E") rather than on a separate sub-row,
+        # so both the base rate and the earth-% variant must be detected
+        # together here instead of via a two-row lookahead.
         if any(k in label for k in LABEL_MAP["feeder"]):
-            current_section = "feeder"
-            last_feeder_row = True
+            has_50 = any(k in label for k in LABEL_MAP["50%e"])
+            has_100 = any(k in label for k in LABEL_MAP["100%e"])
+            if has_50 or has_100:
+                suffix = "50" if has_50 else "100"
+                for col, frame_a in frame_cols.items():
+                    v = _to_float(row[col] if col < len(row) else None)
+                    if v:
+                        result[f"feeder_{frame_a}_{suffix}"] = v
             continue
-
-        if last_feeder_row or current_section == "feeder":
-            if "50" in label and ("e" in label or "earth" in label):
-                for col, frame_a in frame_cols.items():
-                    v = _to_float(row[col] if col < len(row) else None)
-                    if v:
-                        result[f"feeder_{frame_a}_50"] = v
-                last_feeder_row = False
-                continue
-            if "100" in label and ("e" in label or "earth" in label):
-                for col, frame_a in frame_cols.items():
-                    v = _to_float(row[col] if col < len(row) else None)
-                    if v:
-                        result[f"feeder_{frame_a}_100"] = v
-                last_feeder_row = False
-                current_section = None
-                continue
-
-        last_feeder_row = False
 
         for key, aliases in LABEL_MAP.items():
             if key in ("feeder", "50%e", "100%e"):
                 continue
-            if any(alias in label for alias in aliases):
+            # "elbow" needs an exact-label match: the sheet also has
+            # "Vertical/Horizontal/Offset/Combination/Special Angle Elbow"
+            # rows that all contain the substring "elbow" and would
+            # otherwise silently overwrite the plain Elbow rate.
+            matched = label == "elbow" if key == "elbow" else any(alias in label for alias in aliases)
+            if matched:
                 for col, frame_a in frame_cols.items():
                     v = _to_float(row[col] if col < len(row) else None)
                     if v:
@@ -412,8 +425,18 @@ def _parse_piu_sheet(rows: list) -> dict:
     if header_idx is None:
         return result
 
+    # The rating label sits in whichever column precedes the first price
+    # column — real sheets have a blank spacer column before it, so
+    # column 0 can't be assumed. Range labels like "32A - 100A" must
+    # resolve to the upper bound (100), matching PriceList.piu()'s
+    # nearest-band-rounded-up fallback lookup.
+    min_price_col = min(ka_cols) if ka_cols else 0
     for row in rows[header_idx + 1:]:
-        rating = _extract_amperage(str(row[0]) if row else "")
+        rating = None
+        for cell in row[:min_price_col]:
+            rating = _extract_upper_amperage(cell)
+            if rating:
+                break
         if not rating:
             continue
         for col, ka in ka_cols.items():
@@ -428,18 +451,27 @@ def _parse_bimetal_sheet(rows: list) -> dict:
     """
     Parse BI METAL PLATE sheet. Rows: frame ratings → price.
     Keys: bimetal_{frame_a}
+
+    Real sheet layout has a blank spacer column before the amperage label,
+    and the price (RM/SET) is the last column, with several unrelated
+    numeric columns (No/W(mm)/L(mm)) in between — so the label is found by
+    scanning the row rather than assuming column 0, and the price is taken
+    from the last cell rather than "the first non-empty numeric cell".
     """
     result: dict = {}
     for row in rows:
         if not row:
             continue
-        a = _extract_amperage(str(row[0]))
-        if a:
-            for cell in row[1:]:
-                v = _to_float(cell)
-                if v:
-                    result[f"bimetal_{a}"] = v
-                    break
+        a = None
+        for cell in row:
+            a = _extract_upper_amperage(cell)
+            if a:
+                break
+        if not a:
+            continue
+        price = _to_float(row[-1])
+        if price:
+            result[f"bimetal_{a}"] = price
     return result
 
 
