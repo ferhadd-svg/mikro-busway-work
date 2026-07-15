@@ -403,6 +403,8 @@
     .tag-conf-high { background: var(--green-light); color: var(--green); }
     .tag-conf-med  { background: var(--orange-light); color: var(--orange); }
     .tag-conf-low  { background: var(--red-light); color: var(--red); }
+    .tag-won       { background: var(--green-light); color: var(--green); }
+    .tag-lost      { background: var(--red-light); color: var(--red); }
     .run-edit-input, .run-edit-select {
       width: 100%; min-width: 64px; padding: 4px 6px; font-size: .82rem;
       border: 1px solid var(--border); border-radius: 6px; background: #fff;
@@ -939,6 +941,33 @@
           <option value="quotation_ready">Quotation ready</option>
         </select>
       </div>
+      <div id="outcome-panel" class="card" style="display:none; margin-bottom:20px; border-color:var(--brand);">
+        <div class="section-label" style="margin-top:0;">Mark outcome — <span id="outcome-panel-ref"></span></div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Outcome</label>
+            <select id="edit-outcome-status">
+              <option value="">Not decided</option>
+              <option value="won">Won</option>
+              <option value="lost">Lost</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Final Value (RM)</label>
+            <input id="edit-outcome-value" type="number" step="1" min="0" />
+          </div>
+          <div class="form-group" style="grid-column: 1 / -1;">
+            <label>Notes</label>
+            <textarea id="edit-outcome-notes" rows="2" placeholder="Optional — e.g. reason lost, negotiation notes"></textarea>
+          </div>
+        </div>
+        <div id="edit-outcome-message" style="font-size:.8rem; margin:10px 0; min-height:1em;"></div>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-primary" onclick="saveOutcome()">Save</button>
+          <button class="btn btn-outline" onclick="cancelOutcomeEdit()">Cancel</button>
+        </div>
+      </div>
+
       <div id="projects-table-area">
         <div class="empty-state">
           <div class="empty-icon">📂</div>
@@ -1702,12 +1731,17 @@
       const d = new Date(p.created_at);
       return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     }).length;
+    const won = projects.filter(p => p.outcome === 'won').length;
+    const lost = projects.filter(p => p.outcome === 'lost').length;
+    const winRate = (won + lost) > 0 ? Math.round((won / (won + lost)) * 100) + '%' : '—';
 
     const metrics = [
       { label: 'Total Projects', value: projects.length },
       { label: 'Needs Attention', value: needsAttention },
       { label: 'Quotations Ready', value: quotationsReady },
       { label: 'Created This Month', value: createdThisMonth },
+      { label: 'Won', value: won },
+      { label: 'Win Rate', value: winRate },
     ];
     document.getElementById('dashboard-metrics').innerHTML = metrics.map(m => `
       <div class="metric-card">
@@ -1729,16 +1763,26 @@
     if (!projects.length) {
       return '<div class="empty-state"><div class="empty-icon">📋</div><p>No projects yet. Create one with the button above.</p></div>';
     }
-    const rows = projects.map(p => `
+    const rows = projects.map(p => {
+      const outcomeTag = p.outcome === 'won' ? '<span class="tag tag-won">Won</span>'
+        : p.outcome === 'lost' ? '<span class="tag tag-lost">Lost</span>'
+        : '—';
+      const outcomeBtn = p.status === 'quotation_ready'
+        ? `<button class="btn btn-outline" style="padding:4px 10px; font-size:.78rem;" onclick="event.stopPropagation(); openOutcomePanel(${p.id})">Mark Outcome</button>`
+        : '';
+      return `
       <tr onclick="openProject(${p.id})" style="cursor:pointer;">
         <td><strong>${p.our_ref}</strong></td>
         <td>${p.client_name}</td>
         <td>${p.salesperson_name || '—'}</td>
         <td><span class="tag s-${p.status}">${p.status.replace(/_/g,' ')}</span></td>
+        <td>${outcomeTag}</td>
         <td>${new Date(p.updated_at).toLocaleDateString()}</td>
-      </tr>`).join('');
+        <td>${outcomeBtn}</td>
+      </tr>`;
+    }).join('');
     return `<div class="table-wrap"><table>
-      <thead><tr><th>Ref</th><th>Client</th><th>Salesperson</th><th>Status</th><th>Updated</th></tr></thead>
+      <thead><tr><th>Ref</th><th>Client</th><th>Salesperson</th><th>Status</th><th>Outcome</th><th>Updated</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`;
   }
@@ -1768,6 +1812,40 @@
     currentProjectId = id;
     showTab('new');
     alert_('info', `Project ${id} loaded. Use the steps above to continue.`);
+  }
+
+  function openOutcomePanel(id) {
+    const p = allProjects.find(p => p.id === id);
+    if (!p) return;
+    showTab('projects');
+    document.getElementById('outcome-panel').dataset.projectId = id;
+    document.getElementById('outcome-panel-ref').textContent = `${p.our_ref} — ${p.client_name}`;
+    document.getElementById('edit-outcome-status').value = p.outcome || '';
+    document.getElementById('edit-outcome-value').value = p.outcome_value_myr ?? p.quoted_value_myr ?? '';
+    document.getElementById('edit-outcome-notes').value = p.outcome_notes || '';
+    document.getElementById('edit-outcome-message').textContent = '';
+    document.getElementById('outcome-panel').style.display = 'block';
+  }
+
+  function cancelOutcomeEdit() {
+    document.getElementById('outcome-panel').style.display = 'none';
+  }
+
+  async function saveOutcome() {
+    const id = document.getElementById('outcome-panel').dataset.projectId;
+    const outcome = document.getElementById('edit-outcome-status').value || null;
+    const valueRaw = document.getElementById('edit-outcome-value').value;
+    const outcome_value_myr = valueRaw === '' ? null : parseFloat(valueRaw);
+    const outcome_notes = document.getElementById('edit-outcome-notes').value.trim() || null;
+    const msgEl = document.getElementById('edit-outcome-message');
+    msgEl.style.color = 'var(--red)';
+    msgEl.textContent = '';
+    try {
+      await api('PATCH', `/projects/${id}/outcome`, { outcome, outcome_value_myr, outcome_notes });
+      document.getElementById('outcome-panel').style.display = 'none';
+      await loadProjects();
+      alert_('success', 'Outcome updated.');
+    } catch(e) { msgEl.textContent = e.message; }
   }
 
   // ── Customers ─────────────────────────────────────────────────

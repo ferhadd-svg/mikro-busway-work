@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.project import Project
 from app.models.salesperson import Salesperson
-from app.schemas.project import ProjectCreate, ProjectOut
+from app.schemas.project import ProjectCreate, ProjectOut, ProjectOutcomeUpdate
 from app.schemas.boq import DrawingExtraction, FlagAnswers, BOQResponse
 from app.services.drawing_reader import read_drawing
 from app.services.price_list import price_list
@@ -29,6 +29,7 @@ from app.services.boq_builder import build_boq
 from app.services.quotation_builder import build_quotation
 from app.services.auth import get_current_user, require_role
 from app.services.customers import get_or_create_customer
+from app.services.projects import apply_outcome
 from app.config import settings
 
 # Every endpoint in this router requires a logged-in user (any role) — see
@@ -295,6 +296,7 @@ def generate_quotation(project_id: int, db: Session = Depends(get_db)):
     )
 
     project.quotation_filename = out_path.name
+    project.quoted_value_myr = round(boq.subtotal_myr * 1.10)
     project.status = "quotation_ready"
     db.commit()
 
@@ -305,6 +307,19 @@ def generate_quotation(project_id: int, db: Session = Depends(get_db)):
         "grand_total_myr": round(boq.subtotal_myr * 1.10),
         "subtotal_myr": round(boq.subtotal_myr),
     }
+
+
+# ------------------------------------------------------------------ #
+#  Outcome — win/loss tracking, only settable once quotation_ready    #
+# ------------------------------------------------------------------ #
+
+@router.patch("/{project_id}/outcome", response_model=ProjectOut)
+def set_project_outcome(project_id: int, data: ProjectOutcomeUpdate, db: Session = Depends(get_db)):
+    project = _get_or_404(project_id, db)
+    _require_status(project, ("quotation_ready",))
+    apply_outcome(project, data)
+    db.commit()
+    return _enrich_projects([project], db)[0]
 
 
 # ------------------------------------------------------------------ #
