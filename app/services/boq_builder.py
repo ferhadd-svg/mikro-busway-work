@@ -23,7 +23,7 @@ from openpyxl.utils import get_column_letter
 from app.schemas.boq import (
     BusRun, DrawingExtraction, FlagAnswers, BOQLineItem, BOQRun, BOQResponse
 )
-from app.services.price_list import price_list
+from app.services.price_list import price_list, resolve_frame_rating
 from app.config import settings
 
 
@@ -170,6 +170,8 @@ def build_boq(
         # Apply any per-run overrides from flag answers
         overrides = flags.run_overrides.get(run.run_id, {})
         if overrides:
+            if "rating_a" in overrides and "frame_rating_a" not in overrides:
+                overrides = {**overrides, "frame_rating_a": resolve_frame_rating(overrides["rating_a"])}
             run = run.model_copy(update=overrides)
 
         if run.run_type == "TX-MSB":
