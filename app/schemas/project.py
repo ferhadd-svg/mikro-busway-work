@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Literal
 import datetime
 
@@ -39,3 +39,10 @@ class ProjectOutcomeUpdate(BaseModel):
     outcome: Literal["won", "lost"] | None
     outcome_value_myr: float | None = None
     outcome_notes: str | None = None
+
+
+class EmailQuotationRequest(BaseModel):
+    to: list[EmailStr]              # at least one required (enforced in router)
+    cc: list[EmailStr] = []
+    subject: str | None = None      # server builds a default from our_ref
+    message: str | None = None      # server builds a default body
