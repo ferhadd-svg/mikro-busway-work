@@ -372,6 +372,14 @@ def _parse_price_sheet(rows: list) -> dict:
         # so both the base rate and the earth-% variant must be detected
         # together here instead of via a two-row lookahead.
         if any(k in label for k in LABEL_MAP["feeder"]):
+            # The sheet lists BOTH 3-wire and 4-wire feeder variants for
+            # each earth %, in adjacent rows. Mikro quotes 3P4W as standard
+            # (BusRun.phases default), so the 3W rows must be skipped —
+            # otherwise the later 3W row silently overwrites the correct
+            # (higher) 4W price. Same class of collision as the elbow rows.
+            compact = label.replace(" ", "")
+            if "3w" in compact:
+                continue
             has_50 = any(k in label for k in LABEL_MAP["50%e"])
             has_100 = any(k in label for k in LABEL_MAP["100%e"])
             if has_50 or has_100:

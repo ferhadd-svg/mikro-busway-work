@@ -128,6 +128,25 @@ def test_parse_price_sheet_feeder_earth_pct_in_same_row():
     assert "feeder_400" not in result  # plain 4W row (no earth%) is never used
 
 
+def test_parse_price_sheet_feeder_uses_4w_not_3w_variant():
+    # The sheet lists both 3-wire and 4-wire feeder rows for each earth %,
+    # adjacent to each other. Mikro quotes 3P4W as standard, so the 4W price
+    # must win — the later 3W row must NOT overwrite it (same collision class
+    # as the elbow variant rows).
+    rows = [
+        ["Description", "", "", "Unit", "400A", "630A", "1250A"],
+        ["Feeder 3P (4W) + 50%E", "", "", "M", 100.0, 200.0, 300.0],
+        ["Feeder 3P (3W) + 50%E", "", "", "M", 80.0, 160.0, 240.0],
+        ["Feeder 3P (4W) + 100%E", "", "", "M", 110.0, 210.0, 310.0],
+        ["Feeder 3P (3W) + 100%E", "", "", "M", 88.0, 168.0, 248.0],
+    ]
+    result = _parse_price_sheet(rows)
+    assert result["feeder_400_50"] == 100.0    # 4W, not the 80.0 3W row
+    assert result["feeder_1250_50"] == 300.0
+    assert result["feeder_400_100"] == 110.0
+    assert result["feeder_1250_100"] == 310.0
+
+
 def test_parse_price_sheet_elbow_not_clobbered_by_variant_rows():
     # Multiple rows contain the substring "elbow" — only the exact "Elbow"
     # label should populate elbow_*, not Vertical/Special Angle variants.
