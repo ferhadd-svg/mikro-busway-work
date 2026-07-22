@@ -773,9 +773,13 @@
             </select>
           </div>
           <div class="form-group full">
-            <label>Client Name <span class="req">*</span></label>
+            <label>Client Name <span class="req">*</span> <span style="color:var(--muted); font-weight:400;">(the "To" contractor/customer)</span></label>
             <input id="client-name" list="customer-names" placeholder="e.g. IOI Properties Group Sdn Bhd" />
             <datalist id="customer-names"></datalist>
+          </div>
+          <div class="form-group full">
+            <label>Project / Development name <span style="color:var(--muted); font-weight:400;">(the quotation's PROJECT line)</span></label>
+            <input id="project-title" placeholder="e.g. RESIDENSI EDEN FOR BRDB DEVELOPMENTS" />
           </div>
           <div class="form-group">
             <label>Attention (Attn)</label>
@@ -1393,7 +1397,7 @@
     currentProjectId = null;
     extractionData = null;
     runOverrides = {};
-    ['our-ref','client-name','attn','me-consultant'].forEach(id => {
+    ['our-ref','client-name','project-title','attn','me-consultant'].forEach(id => {
       const el = document.getElementById(id); if (el) el.value = '';
     });
     const sp = document.getElementById('salesperson-id'); if (sp) sp.value = '';
@@ -1599,6 +1603,7 @@
     }
     const body = {
       our_ref: ourRef, client_name: client,
+      project_title: document.getElementById('project-title').value.trim() || null,
       attn: document.getElementById('attn').value.trim() || null,
       me_consultant: document.getElementById('me-consultant').value.trim() || null,
       salesperson_id: parseInt(spId),

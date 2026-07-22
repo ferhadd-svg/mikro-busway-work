@@ -354,6 +354,7 @@ def generate_quotation(project_id: int, db: Session = Depends(get_db)):
         attn=project.attn,
         me_consultant=project.me_consultant,
         template_path=template_path,
+        project_title=project.project_title,
     )
 
     project.quotation_filename = out_path.name

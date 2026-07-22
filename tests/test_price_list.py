@@ -186,6 +186,9 @@ def test_parse_bimetal_sheet_blank_spacer_and_trailing_price_column():
         ["", "400A", 1.0, 80.0, 40.0, 100.0],
         ["", "630A", 1.0, 80.0, 50.0, 120.0],
     ]
-    result = _parse_bimetal_sheet(rows)
-    assert result["bimetal_400"] == 100.0
-    assert result["bimetal_630"] == 120.0
+    prices, dims = _parse_bimetal_sheet(rows)
+    assert prices["bimetal_400"] == 100.0
+    assert prices["bimetal_630"] == 120.0
+    # dimensions (No, W, L) are captured for the description text
+    assert dims[400] == (1, 80.0, 40.0)
+    assert dims[630] == (1, 80.0, 50.0)

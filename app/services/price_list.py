@@ -66,6 +66,7 @@ class PriceList:
         self._cu: dict = {}
         self._piu: dict = {}
         self._bimetal: dict = {}
+        self._bimetal_dims: dict = {}   # frame_a -> (no, w_mm, l_mm)
         self._loaded_file: Optional[str] = None
 
     def load(self, path: Path) -> None:
@@ -132,6 +133,10 @@ class PriceList:
     def bimetal(self, frame_a: int) -> float:
         """Bi-metal plate — aluminium runs only."""
         return self._bimetal.get(f"bimetal_{frame_a}", 0.0)
+
+    def bimetal_dims(self, frame_a: int):
+        """(No, W_mm, L_mm) for the bi-metal plate at this frame, or None."""
+        return self._bimetal_dims.get(frame_a)
 
     def piu(self, rating_a: int, ka: int = 26) -> float:
         """PIU Hyundai MCCB rate by ampere + kA tier."""
@@ -219,7 +224,7 @@ class PriceList:
             elif "piu" in sn:
                 self._piu = _parse_piu_sheet_xls(sheet)
             elif "bi metal" in sn or "bi-metal" in sn or "bimetal" in sn:
-                self._bimetal = _parse_bimetal_sheet_xls(sheet)
+                self._bimetal, self._bimetal_dims = _parse_bimetal_sheet_xls(sheet)
 
     def _load_xlsx(self, path: Path) -> None:
         wb = openpyxl.load_workbook(str(path), data_only=True)
@@ -233,7 +238,7 @@ class PriceList:
             elif "piu" in sn:
                 self._piu = _parse_piu_sheet_xlsx(ws)
             elif "bi metal" in sn or "bi-metal" in sn or "bimetal" in sn:
-                self._bimetal = _parse_bimetal_sheet_xlsx(ws)
+                self._bimetal, self._bimetal_dims = _parse_bimetal_sheet_xlsx(ws)
 
 
 # ------------------------------------------------------------------ #
@@ -466,21 +471,29 @@ def _parse_bimetal_sheet(rows: list) -> dict:
     scanning the row rather than assuming column 0, and the price is taken
     from the last cell rather than "the first non-empty numeric cell".
     """
-    result: dict = {}
+    prices: dict = {}
+    dims: dict = {}
     for row in rows:
         if not row:
             continue
+        idx = None
         a = None
-        for cell in row:
+        for i, cell in enumerate(row):
             a = _extract_upper_amperage(cell)
             if a:
+                idx = i
                 break
         if not a:
             continue
         price = _to_float(row[-1])
         if price:
-            result[f"bimetal_{a}"] = price
-    return result
+            prices[f"bimetal_{a}"] = price
+        # After the amperage label the numeric cells are No, W(mm), L(mm),
+        # then the price. Capture the first three as the plate dimensions.
+        nums = [c for c in row[idx + 1:] if isinstance(c, (int, float)) and c]
+        if len(nums) >= 4:
+            dims[a] = (int(nums[0]), nums[1], nums[2])
+    return prices, dims
 
 
 # Singleton — loaded once at startup or when a new price list is uploaded

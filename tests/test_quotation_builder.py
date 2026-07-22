@@ -294,3 +294,45 @@ def test_multiple_runs_all_land_above_subtotal():
     # PIU section label present within the run block
     piu_row = _find_row(ws, lambda v: v == "PLUG-IN UNITS (PIU) :")
     assert piu_row is not None and piu_row < sub_row
+
+
+# ------------------------------------------------------------------ #
+#  MK.509 house-format details: title, terms, remarks                 #
+# ------------------------------------------------------------------ #
+
+from app.services.quotation_builder import (
+    _run_title, _remarks_al, _remarks_for_runs, _terms_block,
+)
+
+
+def _bqrun(material):
+    return BOQRun(run_id="R1", routing="x", run_type="TX-MSB", material=material,
+                  items=[], rating_a=6000, frame_rating_a=6300, earth_pct=50, phases="3P4W")
+
+
+def test_run_title_shows_nominal_and_frame():
+    t = _run_title(_bqrun("AL"))
+    assert "# 6000A (6300A) TPNE" in t
+    assert "(ALUMINIUM)" in t
+
+
+def test_remarks_al_has_dated_lme_remark():
+    rem = _remarks_al(FlagAnswers(lme_usd_per_mt=3140, usd_to_myr=4.0))
+    assert rem[1] == "All Bi-Metal materials for Aluminum Busway are by contractor."
+    assert any("LME Aluminium" in r and "3,140" in r for r in rem)
+
+
+def test_copper_run_gets_copper_terms_and_remarks():
+    flags = FlagAnswers(lme_usd_per_mt=13298, usd_to_myr=4.0)
+    runs = [_bqrun("CU")]
+    assert any("Copper Bars" in r for r in _remarks_for_runs(runs, flags))
+    labels = [l for l, _ in _terms_block(runs, flags)]
+    assert "Cancellation" in labels          # copper-only term
+
+
+def test_aluminium_run_gets_aluminium_terms():
+    flags = FlagAnswers(lme_usd_per_mt=3140, usd_to_myr=4.0)
+    runs = [_bqrun("AL")]
+    assert any("Aluminum Busway are by contractor" in r for r in _remarks_for_runs(runs, flags))
+    labels = [l for l, _ in _terms_block(runs, flags)]
+    assert "Cancellation" not in labels
