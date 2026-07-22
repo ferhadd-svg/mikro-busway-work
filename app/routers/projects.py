@@ -23,9 +23,12 @@ from app.models.project import Project
 from app.models.salesperson import Salesperson
 from app.models.customer_contact import CustomerContact
 from app.models.customer_note import CustomerNote
-from app.schemas.project import ProjectCreate, ProjectOut, ProjectOutcomeUpdate, EmailQuotationRequest
+from app.schemas.project import (
+    ProjectCreate, ProjectOut, ProjectUpdate, ProjectOutcomeUpdate,
+    EmailQuotationRequest, DrawingReadRequest,
+)
 from app.schemas.boq import DrawingExtraction, FlagAnswers, BOQResponse
-from app.services.drawing_reader import read_drawing
+from app.services.drawing_reader import read_drawing, pdf_page_thumbnails
 from app.services.price_list import price_list
 from app.services.boq_builder import build_boq
 from app.services.quotation_builder import build_quotation
@@ -84,56 +87,111 @@ def get_project(project_id: int, db: Session = Depends(get_db)):
     return _get_or_404(project_id, db)
 
 
+@router.patch("/{project_id}", response_model=ProjectOut)
+def update_project(project_id: int, data: ProjectUpdate, db: Session = Depends(get_db)):
+    """Correct Step 1 details after the project exists (typo'd ref, wrong
+    client/salesperson). Only the supplied fields change."""
+    project = _get_or_404(project_id, db)
+    fields = data.model_dump(exclude_unset=True)
+
+    new_ref = fields.get("our_ref")
+    if new_ref and new_ref != project.our_ref:
+        clash = db.query(Project).filter(
+            Project.our_ref == new_ref, Project.id != project_id
+        ).first()
+        if clash:
+            raise HTTPException(400, f"Project ref '{new_ref}' already exists.")
+
+    for key, value in fields.items():
+        setattr(project, key, value)
+
+    # Keep the customer link in step with an edited client name.
+    if fields.get("client_name"):
+        customer = get_or_create_customer(db, project.client_name, project.attn)
+        project.customer_id = customer.id
+
+    db.commit()
+    return _enrich_projects([project], db)[0]
+
+
 # ------------------------------------------------------------------ #
 #  Step 2 — Upload drawing and have Claude read it                    #
 # ------------------------------------------------------------------ #
 
-@router.post("/{project_id}/drawing")
-async def upload_drawing(
-    project_id: int,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-):
-    project = _get_or_404(project_id, db)
+_ALLOWED_DRAWING = (".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff")
 
-    allowed = (".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff")
+
+async def _save_uploaded_drawing(project: Project, file: UploadFile) -> Path:
     suffix = Path(file.filename).suffix.lower()
-    if suffix not in allowed:
-        raise HTTPException(400, f"Unsupported file type '{suffix}'. Allowed: {', '.join(allowed)}")
-
-    # Save drawing
-    drawing_path = _project_dir(project_id) / file.filename
+    if suffix not in _ALLOWED_DRAWING:
+        raise HTTPException(400, f"Unsupported file type '{suffix}'. Allowed: {', '.join(_ALLOWED_DRAWING)}")
+    drawing_path = _project_dir(project.id) / file.filename
     with open(drawing_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
-
+        f.write(await file.read())
     project.drawing_filename = file.filename
+    return drawing_path
+
+
+def _read_and_store(project: Project, drawing_path: Path, pages: list[int] | None, db: Session) -> dict:
     project.status = "reading_drawing"
     db.commit()
-
-    # Call Claude
     try:
-        extraction: DrawingExtraction = read_drawing(drawing_path)
+        extraction: DrawingExtraction = read_drawing(drawing_path, pages=pages)
     except Exception as e:
         project.status = "draft"
         db.commit()
-        # The UI already prefixes "Drawing read failed:", so pass the raw reason.
         raise HTTPException(500, str(e))
-
     project.drawing_extraction_json = extraction.model_dump_json()
     project.status = "flags_pending"
     db.commit()
-
-    # Build flags list for the user
-    flags_summary = _build_flags_summary(extraction)
-
     return {
-        "project_id": project_id,
+        "project_id": project.id,
         "status": "flags_pending",
         "runs_found": len(extraction.runs),
-        "flags": flags_summary,
+        "flags": _build_flags_summary(extraction),
         "extraction": extraction.model_dump(),
     }
+
+
+@router.post("/{project_id}/drawing/preview")
+async def preview_drawing(project_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Save the uploaded drawing and, for multi-page PDFs, return page
+    thumbnails so the user can pick which sheet holds the busduct SLD. Does
+    NOT call the AI."""
+    project = _get_or_404(project_id, db)
+    drawing_path = await _save_uploaded_drawing(project, file)
+    db.commit()
+    if drawing_path.suffix.lower() == ".pdf":
+        page_count, thumbnails = pdf_page_thumbnails(drawing_path)
+    else:
+        page_count, thumbnails = 1, []
+    return {
+        "project_id": project_id,
+        "filename": project.drawing_filename,
+        "page_count": page_count,
+        "thumbnails": thumbnails,   # data URLs, empty for single images
+    }
+
+
+@router.post("/{project_id}/drawing/read")
+def read_saved_drawing(project_id: int, data: DrawingReadRequest, db: Session = Depends(get_db)):
+    """Run the AI read on the already-previewed drawing for the chosen pages."""
+    project = _get_or_404(project_id, db)
+    if not project.drawing_filename:
+        raise HTTPException(400, "No drawing uploaded yet — upload one first.")
+    drawing_path = _project_dir(project_id) / project.drawing_filename
+    if not drawing_path.exists():
+        raise HTTPException(404, "Uploaded drawing file is missing — please re-upload.")
+    return _read_and_store(project, drawing_path, data.pages, db)
+
+
+@router.post("/{project_id}/drawing")
+async def upload_drawing(project_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Single-call upload+read (kept for images / direct use). The wizard uses
+    preview + read so it can offer a page picker."""
+    project = _get_or_404(project_id, db)
+    drawing_path = await _save_uploaded_drawing(project, file)
+    return _read_and_store(project, drawing_path, None, db)
 
 
 # ------------------------------------------------------------------ #

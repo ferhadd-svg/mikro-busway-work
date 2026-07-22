@@ -105,13 +105,20 @@ Respond with ONLY a JSON object — no markdown fences, no commentary. Schema:
 }"""
 
 
-# SLDs regularly span more than one sheet; send Claude up to this many pages.
+# When no pages are chosen (legacy single-call path), read up to this many.
 MAX_PDF_PAGES = 4
+# Cap how many page thumbnails the picker renders (bounds a huge tender set).
+MAX_THUMBNAIL_PAGES = 40
 
 
-def _pdf_to_images(pdf_path: Path, max_pages: int = MAX_PDF_PAGES) -> tuple[list[Path], int]:
-    """Rasterize up to max_pages PDF pages to PNGs using PyMuPDF (no system deps).
-    Returns (image_paths, total_page_count)."""
+def _pdf_to_images(
+    pdf_path: Path,
+    pages: list[int] | None = None,
+    max_pages: int = MAX_PDF_PAGES,
+) -> tuple[list[Path], int]:
+    """Rasterize PDF pages to PNGs using PyMuPDF (no system deps).
+    `pages` is an explicit 1-based list to render (from the page picker); when
+    None, renders the first `max_pages`. Returns (image_paths, total_pages)."""
     try:
         doc = fitz.open(str(pdf_path))
     except Exception as e:
@@ -120,8 +127,12 @@ def _pdf_to_images(pdf_path: Path, max_pages: int = MAX_PDF_PAGES) -> tuple[list
         total_pages = doc.page_count
         if total_pages == 0:
             raise RuntimeError("The PDF drawing has no pages.")
+        if pages:
+            indices = [p - 1 for p in pages if 1 <= p <= total_pages]
+        else:
+            indices = list(range(min(total_pages, max_pages)))
         paths = []
-        for i in range(min(total_pages, max_pages)):
+        for i in indices:
             page = doc.load_page(i)
             # PDFs default to 72 DPI; render at ~220 DPI so small busduct/ACB
             # labels survive. The page is tiled afterwards, so a big raster is
@@ -133,6 +144,25 @@ def _pdf_to_images(pdf_path: Path, max_pages: int = MAX_PDF_PAGES) -> tuple[list
     finally:
         doc.close()
     return paths, total_pages
+
+
+def pdf_page_thumbnails(pdf_path: Path, long_edge: int = 340) -> tuple[int, list[str]]:
+    """Return (total_page_count, [data-URL thumbnail per page]) for the page
+    picker. Only the first MAX_THUMBNAIL_PAGES are thumbnailed."""
+    doc = fitz.open(str(pdf_path))
+    try:
+        total_pages = doc.page_count
+        thumbs: list[str] = []
+        for i in range(min(total_pages, MAX_THUMBNAIL_PAGES)):
+            page = doc.load_page(i)
+            r = page.rect
+            scale = long_edge / max(r.width, r.height) if max(r.width, r.height) else 1
+            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
+            b64 = base64.standard_b64encode(pix.tobytes("png")).decode()
+            thumbs.append(f"data:image/png;base64,{b64}")
+    finally:
+        doc.close()
+    return total_pages, thumbs
 
 
 def _ensure_supported_image(image_path: Path) -> Path:
@@ -320,15 +350,17 @@ def _normalise_run(r: dict, index: int) -> dict:
     return r
 
 
-def read_drawing(drawing_path: Path) -> DrawingExtraction:
+def read_drawing(drawing_path: Path, pages: list[int] | None = None) -> DrawingExtraction:
     """
     Main entry point. Accepts PDF (multi-page) or image file.
+    `pages` is an explicit 1-based page selection from the picker; when None,
+    the first MAX_PDF_PAGES are read.
     Calls Claude with vision and returns a DrawingExtraction.
     """
     # Convert PDF → images; normalise other image formats (TIFF etc.) to PNG
     total_pages = 1
     if drawing_path.suffix.lower() == ".pdf":
-        image_paths, total_pages = _pdf_to_images(drawing_path)
+        image_paths, total_pages = _pdf_to_images(drawing_path, pages=pages)
     else:
         image_paths = [_ensure_supported_image(drawing_path)]
 
@@ -424,10 +456,15 @@ def read_drawing(drawing_path: Path) -> DrawingExtraction:
         )
 
     global_flags = [str(f) for f in (data.get("global_flags") or [])]
-    if total_pages > len(image_paths):
+    if pages:
+        global_flags.append(
+            f"Read page(s) {', '.join(str(p) for p in pages)} of {total_pages}. "
+            f"If a run is on another page, add that page too."
+        )
+    elif total_pages > len(image_paths):
         global_flags.append(
             f"The PDF has {total_pages} pages but only the first {len(image_paths)} "
-            f"were read. Check the remaining pages for additional runs."
+            f"were read. Re-upload and pick the page with the busduct SLD."
         )
 
     # One malformed run should not lose the whole drawing: normalise what we
