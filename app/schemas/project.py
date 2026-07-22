@@ -35,6 +35,20 @@ class ProjectOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ProjectUpdate(BaseModel):
+    # All optional — used to correct Step 1 details after the project exists.
+    our_ref: str | None = None
+    client_name: str | None = None
+    attn: str | None = None
+    me_consultant: str | None = None
+    salesperson_id: int | None = None
+
+
+class DrawingReadRequest(BaseModel):
+    # 1-based page numbers to read; None → let the reader default (first pages).
+    pages: list[int] | None = None
+
+
 class ProjectOutcomeUpdate(BaseModel):
     outcome: Literal["won", "lost"] | None
     outcome_value_myr: float | None = None

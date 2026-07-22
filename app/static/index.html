@@ -219,6 +219,9 @@
       padding: 0 6px;
       cursor: default;
     }
+    /* Steps already reached can be clicked to jump back/forth. */
+    .step-item.reachable { cursor: pointer; }
+    .step-item.reachable:hover .step-text { text-decoration: underline; }
     .step-circle {
       width: 30px;
       height: 30px;
@@ -692,7 +695,7 @@
     <button class="side-link" id="nav-dashboard" onclick="showTab('dashboard')">
       <span class="side-icon">▦</span><span class="side-label">Dashboard</span>
     </button>
-    <button class="side-link" id="nav-new" onclick="showTab('new')">
+    <button class="side-link" id="nav-new" onclick="startNewProject()">
       <span class="side-icon">+</span><span class="side-label">New Project</span>
     </button>
     <button class="side-link" id="nav-projects" onclick="showTab('projects')">
@@ -726,27 +729,27 @@
     <!-- Progress bar -->
     <div class="progress-wrap">
       <div class="steps" id="steps">
-        <div class="step-item active" data-step="1">
+        <div class="step-item active" data-step="1" onclick="tryStep(1)">
           <div class="step-circle"><span>1</span></div>
           <div class="step-text">Project details</div>
         </div>
         <div class="step-connector" id="conn-1"></div>
-        <div class="step-item" data-step="2">
+        <div class="step-item" data-step="2" onclick="tryStep(2)">
           <div class="step-circle"><span>2</span></div>
           <div class="step-text">Add runs</div>
         </div>
         <div class="step-connector" id="conn-2"></div>
-        <div class="step-item" data-step="3">
+        <div class="step-item" data-step="3" onclick="tryStep(3)">
           <div class="step-circle"><span>3</span></div>
           <div class="step-text">Confirm flags</div>
         </div>
         <div class="step-connector" id="conn-3"></div>
-        <div class="step-item" data-step="4">
+        <div class="step-item" data-step="4" onclick="tryStep(4)">
           <div class="step-circle"><span>4</span></div>
           <div class="step-text">Generate BOQ</div>
         </div>
         <div class="step-connector" id="conn-4"></div>
-        <div class="step-item" data-step="5">
+        <div class="step-item" data-step="5" onclick="tryStep(5)">
           <div class="step-circle"><span>5</span></div>
           <div class="step-text">Quotation</div>
         </div>
@@ -823,7 +826,8 @@
         <div id="panel-manual">
           <div id="runs-entry-list"></div>
           <button class="btn btn-secondary btn-sm" onclick="addRunCard()" style="margin-bottom:20px;">+ Add Another Run</button>
-          <div>
+          <div style="display:flex; gap:10px;">
+            <button class="btn btn-outline" onclick="goToStep(1)">← Back</button>
             <button class="btn btn-primary" onclick="submitManualRuns()">Continue to Confirm Flags →</button>
           </div>
         </div>
@@ -839,7 +843,16 @@
           <div id="upload-progress" style="margin-top:16px; display:none;">
             <div class="alert alert-info">
               <div class="spinner spinner-dark" style="border-top-color:var(--brand);border-color:rgba(31,95,166,.2);"></div>
-              <span>Claude is reading your drawing (two-pass method) — this takes 15–30 seconds.</span>
+              <span id="upload-progress-text">Claude is reading your drawing — this takes 15–30 seconds.</span>
+            </div>
+          </div>
+          <div id="page-picker" style="margin-top:16px; display:none;">
+            <div class="section-label" style="margin-top:0;">This file has multiple pages — pick the sheet(s) with the busduct single-line diagram</div>
+            <div id="page-thumbs" style="display:flex; flex-wrap:wrap; gap:12px; margin:12px 0;"></div>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <button class="btn btn-primary" onclick="readSelectedPages()">Read selected page(s) →</button>
+              <button class="btn btn-outline" onclick="cancelPagePicker()">Cancel</button>
+              <span id="page-picker-hint" style="font-size:.8rem; color:var(--muted);"></span>
             </div>
           </div>
         </div>
@@ -890,7 +903,8 @@
           </table>
         </div>
 
-        <div style="margin-top:28px;">
+        <div style="margin-top:28px; display:flex; gap:10px;">
+          <button class="btn btn-outline" onclick="goToStep(2)">← Back</button>
           <button class="btn btn-primary" onclick="submitFlags()">Confirm &amp; Build BOQ →</button>
         </div>
       </div>
@@ -1342,12 +1356,17 @@
   }
 
   // ── Steps ─────────────────────────────────────────────────────
+  let maxStepReached = 1;
+
   function goToStep(n) {
+    maxStepReached = Math.max(maxStepReached, n);
     document.querySelectorAll('.section').forEach((s,i) => s.classList.toggle('active', i === n-1));
     document.querySelectorAll('.step-item').forEach((s,i) => {
       s.classList.remove('active','done');
       if (i < n-1) s.classList.add('done');
       if (i === n-1) s.classList.add('active');
+      // Any step already reached is clickable to jump back/forth.
+      s.classList.toggle('reachable', (i+1) <= maxStepReached);
     });
     for (let i = 1; i <= 4; i++) {
       const c = document.getElementById(`conn-${i}`);
@@ -1355,6 +1374,36 @@
     }
     clearAlerts();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // Click a step tab to jump to it — only steps already reached.
+  function tryStep(n) {
+    if (n <= maxStepReached) goToStep(n);
+  }
+
+  // Reset the wizard for a brand-new project.
+  function resetWizard() {
+    maxStepReached = 1;
+    goToStep(1);
+  }
+
+  // Sidebar "New Project" — clear everything and start fresh (so we create a
+  // new project instead of editing the previous one).
+  function startNewProject() {
+    currentProjectId = null;
+    extractionData = null;
+    runOverrides = {};
+    ['our-ref','client-name','attn','me-consultant'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    const sp = document.getElementById('salesperson-id'); if (sp) sp.value = '';
+    document.getElementById('runs-entry-list').innerHTML = '';
+    runCardCount = 0;
+    const up = document.getElementById('upload-progress'); if (up) up.style.display = 'none';
+    const pp = document.getElementById('page-picker'); if (pp) pp.style.display = 'none';
+    const dz = document.getElementById('drop-zone'); if (dz) dz.style.display = '';
+    resetWizard();
+    showTab('new');
   }
 
   // ── Mode selector ─────────────────────────────────────────────
@@ -1548,37 +1597,103 @@
     if (!ourRef || !client || !spId) {
       alert_('error', 'Please fill in Our Ref, Client Name, and select a Salesperson.'); return;
     }
+    const body = {
+      our_ref: ourRef, client_name: client,
+      attn: document.getElementById('attn').value.trim() || null,
+      me_consultant: document.getElementById('me-consultant').value.trim() || null,
+      salesperson_id: parseInt(spId),
+    };
     try {
-      const proj = await api('POST', '/projects/', {
-        our_ref: ourRef, client_name: client,
-        attn: document.getElementById('attn').value.trim() || null,
-        me_consultant: document.getElementById('me-consultant').value.trim() || null,
-        salesperson_id: parseInt(spId),
-      });
-      currentProjectId = proj.id;
-      document.getElementById('runs-entry-list').innerHTML = '';
-      runCardCount = 0;
-      addRunCard();
+      if (currentProjectId) {
+        // Editing Step 1 after the project exists — update, keep runs intact.
+        await api('PATCH', `/projects/${currentProjectId}`, body);
+      } else {
+        const proj = await api('POST', '/projects/', body);
+        currentProjectId = proj.id;
+        document.getElementById('runs-entry-list').innerHTML = '';
+        runCardCount = 0;
+        addRunCard();
+      }
       goToStep(2);
     } catch(e) { alert_('error', e.message); }
   }
 
   // ── Step 2: Upload drawing ────────────────────────────────────
+  function _setUploadProgress(show, text) {
+    const box = document.getElementById('upload-progress');
+    if (text) document.getElementById('upload-progress-text').textContent = text;
+    box.style.display = show ? 'block' : 'none';
+  }
+
   async function uploadDrawing(input) {
     const file = input.files[0];
     if (!file) return;
-    document.getElementById('upload-progress').style.display = 'block';
+    input.value = '';   // allow re-selecting the same file later
+    if (!currentProjectId) { alert_('error', 'Create the project first (Step 1).'); return; }
     document.getElementById('drop-zone').style.display = 'none';
+    document.getElementById('page-picker').style.display = 'none';
+    _setUploadProgress(true, 'Preparing pages…');
     const fd = new FormData();
     fd.append('file', file);
     try {
-      const res = await api('POST', `/projects/${currentProjectId}/drawing`, fd);
+      const prev = await api('POST', `/projects/${currentProjectId}/drawing/preview`, fd);
+      if (prev.page_count > 1) {
+        _setUploadProgress(false);
+        showPagePicker(prev);                 // let the user pick the SLD sheet(s)
+      } else {
+        await readDrawingPages(null);         // single page / image → read straight away
+      }
+    } catch(e) {
+      alert_('error', `Upload failed: ${e.message}`);
+      _setUploadProgress(false);
+      document.getElementById('drop-zone').style.display = 'block';
+    }
+  }
+
+  function showPagePicker(prev) {
+    const wrap = document.getElementById('page-thumbs');
+    wrap.innerHTML = (prev.thumbnails || []).map((src, i) => `
+      <label style="cursor:pointer; border:2px solid var(--border); border-radius:8px; padding:6px; text-align:center; width:150px;">
+        <img src="${src}" style="width:100%; height:auto; display:block; margin-bottom:6px;" />
+        <input type="checkbox" class="page-check" value="${i+1}" onchange="updatePickerHint()" /> Page ${i+1}
+      </label>`).join('');
+    document.getElementById('page-picker-hint').textContent =
+      prev.page_count > (prev.thumbnails||[]).length
+        ? `Showing first ${(prev.thumbnails||[]).length} of ${prev.page_count} pages.` : '';
+    document.getElementById('page-picker').style.display = 'block';
+    updatePickerHint();
+  }
+
+  function updatePickerHint() {
+    const n = document.querySelectorAll('.page-check:checked').length;
+    const btn = document.querySelector('#page-picker .btn-primary');
+    if (btn) btn.disabled = n === 0;
+  }
+
+  function cancelPagePicker() {
+    document.getElementById('page-picker').style.display = 'none';
+    document.getElementById('drop-zone').style.display = 'block';
+  }
+
+  async function readSelectedPages() {
+    const pages = [...document.querySelectorAll('.page-check:checked')].map(c => parseInt(c.value));
+    if (!pages.length) { alert_('error', 'Tick at least one page.'); return; }
+    document.getElementById('page-picker').style.display = 'none';
+    await readDrawingPages(pages);
+  }
+
+  async function readDrawingPages(pages) {
+    _setUploadProgress(true, 'Claude is reading your drawing — this takes 15–30 seconds.');
+    try {
+      const res = await api('POST', `/projects/${currentProjectId}/drawing/read`, { pages });
       extractionData = res;
       populateFlags(res.flags, res.extraction);
+      _setUploadProgress(false);
+      document.getElementById('drop-zone').style.display = 'block';
       goToStep(3);
     } catch(e) {
       alert_('error', `Drawing read failed: ${e.message}`);
-      document.getElementById('upload-progress').style.display = 'none';
+      _setUploadProgress(false);
       document.getElementById('drop-zone').style.display = 'block';
     }
   }
