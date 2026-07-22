@@ -32,7 +32,11 @@ SYSTEM_PROMPT = """You are an expert electrical engineer specialising in busduct
 
 CRITICAL RULES — read every one before responding:
 
-0. FIRST CHECK THE DOCUMENT IS AN SLD. If the sheet is actually a Schedule of Unit Rates, a Bill of Quantities, a Load Schedule, a cable schedule, or a specification/notes page (tables of "Description / Unit / Price", ampere lists with RM prices, etc.) — it is NOT a single-line diagram. Return "runs": [] and add a global_flag: "Uploaded file looks like a <rate schedule / BOQ / load schedule>, not an SLD — no busduct runs extracted." Do NOT invent runs from a rate table.
+0. FIRST CHECK THE SHEET IS AN SLD. Many uploads are NOT single-line diagrams:
+   - Rate/price docs: Schedule of Unit Rates, Bill of Quantities, Load Schedule, cable schedule, spec/notes page (tables of "Description/Unit/Price", ampere lists with RM prices).
+   - Architectural/other drawings: a FLOOR PLAN, socket/lighting LAYOUT, building ELEVATION, SECTION, or site plan (these ARE drawings but have no single-line runs).
+   In multi-page sets the first page is often a cover, elevation, or layout — the SLD may be on a later page.
+   If the sheet shown is not a single-line schematic, return "runs": [] and add a global_flag naming what it is, e.g. "This sheet is a <floor plan / elevation / rate schedule>, not an SLD — no busduct runs extracted (check the other pages for the single-line diagram)." Do NOT invent runs.
 
 1. QUOTE BUSDUCT ONLY — NOT CABLE. This is the most important rule.
    - A run is BUSDUCT (busway) only if its label says so, e.g. "1250A TPN ALU. BUSDUCT", "600A TPN 3 PHASE ALU. BUSDUCT", "2000A TPN CU BUSDUCT", "BUSWAY", "BUS TRUNKING". The word may sit on its own line with the ampere value just above or below it (e.g. "BUSDUCT" with "1,000 A" underneath) — read them together. Quote these.
@@ -62,8 +66,8 @@ CRITICAL RULES — read every one before responding:
 5. MATERIAL — read "ALU/AL" or "CU/COPPER" from the busduct label. If absent, default AL and flag.
 
 6. EARTH % / PHASES
-   - Earth: shown "50%E"/"100%E" → use it. "1/2 earth" = 50%E. "100% neutral + integral earth" → still price 4W+50%E. "+E" / "+ E" / "c/w integral earth" means earth is integral (a feeder always has it) — NOT a 100% earth; still default 50%E unless a % is given. Not shown → default 50%E and flag.
-   - Phases: "3P4W" → phases "3P4W". "3P5W" → phases "3P5W" (5-wire) and flag "3P5W — price on 5W feeder column".
+   - Earth: shown "50%E"/"+50%E" → 50%E; "100%E"/"+100% EARTH"/"100% ELECTRICAL" → 100%E. "1/2 earth" = 50%E. "100% neutral + integral earth" → still 4W+50%E. "+E" / "+ E" / "c/w integral earth" means earth is integral (a feeder always has it) — NOT a 100% earth; still default 50%E unless a % is given. Not shown → default 50%E and flag.
+   - Phases: "3P4W" or "TPN" or "4P"/"4 POLE" all mean 4-wire → phases "3P4W". "3P5W"/"5W" → phases "3P5W" and flag "3P5W — price on 5W feeder column".
 
 7. PIU (plug-in units on a riser) — list each plug-in/tap-off MCCB rating shown along the run (e.g. 100A, 250A, 400A TPN). If the kA interrupting rating isn't shown, flag it (default 26kA).
 
