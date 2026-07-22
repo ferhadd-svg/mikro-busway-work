@@ -57,88 +57,129 @@ def _line(description: str, unit: str, qty: float, rate: float) -> BOQLineItem:
     )
 
 
+def _subheader(label: str = "OPTIONAL") -> BOQLineItem:
+    """A label-only row (e.g. 'OPTIONAL') that carries no price."""
+    return BOQLineItem(description=label, unit="", qty=0, unit_rate_myr=0,
+                       amount_myr=0, is_subheader=True)
+
+
+def _excluded(description: str, unit: str = "LOTS") -> BOQLineItem:
+    """A line that is quoted out — shows 'EXCLUDED' instead of a price
+    (house format for 'CONNECTION BARS (TX & MSB)')."""
+    return BOQLineItem(description=description, unit=unit, qty=1, unit_rate_myr=0,
+                       amount_myr=0, is_excluded=True)
+
+
+# House-format line descriptions / units (must match the salesperson template
+# and MK.451 verbatim — the run title already carries rating/earth/material,
+# so component lines do NOT repeat the frame rating).
+_FEEDER_DESC = "FEEDER C/W INTEGRAL EARTH  (Horizontal)"
+_U_MTR, _U_NOS, _U_SETS, _U_LOTS = "MTR", "NOS", "SETS", "LOTS"
+
+
+def _mounting_clamp_qty(length_m: float) -> int:
+    """House estimate: ~1 clamp per 2m (MK.451: 10m run → 5 clamps)."""
+    return max(2, math.ceil((length_m or 0.0) / 2.0))
+
+
 def _build_tx_msb(run: BusRun) -> list[BOQLineItem]:
+    """TX-MSB accessory template (skill spec):
+    Feeder · Flange End · Horizontal Elbow · Vertical Elbow · Flexible Link
+    · OPTIONAL[ Mounting Clamp · Bi-metal(Al) ] · Connection Bars=EXCLUDED."""
     fa = run.frame_rating_a
     m = run.material
-    items: list[BOQLineItem] = []
-
     length = run.length_m or 0.0
-    items.append(_line(
-        f"FEEDER C/W INTEGRAL EARTH {run.rating_a}A ({fa}A) 3P4W+{run.earth_pct}%E ({run.material}INIUM)" if m == "AL"
-        else f"FEEDER C/W INTEGRAL EARTH {run.rating_a}A ({fa}A) 3P4W+{run.earth_pct}%E (COPPER)",
-        "m", length, price_list.feeder(fa, run.earth_pct, m)
-    ))
-    items.append(_line(f"FLANGE END ({fa}A)", "No.", 1, price_list.flange_end(fa, m)))
-    items.append(_line(f"HORIZONTAL ELBOW ({fa}A)", "No.", 1, price_list.elbow(fa, m)))
-    items.append(_line(f"VERTICAL ELBOW ({fa}A)", "No.", 1, price_list.vertical_elbow(fa, m)))
-    items.append(_line(f"FLEXIBLE LINK ({fa}A)", "No.", 1, price_list.flexible_conductor(fa, m)))
-
+    items: list[BOQLineItem] = [
+        _line(_FEEDER_DESC, _U_MTR, length, price_list.feeder(fa, run.earth_pct, m)),
+        _line("FLANGE END", _U_NOS, 2, price_list.flange_end(fa, m)),
+        _line("HORIZONTAL ELBOW", _U_NOS, 2, price_list.elbow(fa, m)),
+        _line("VERTICAL ELBOW", _U_NOS, 2, price_list.vertical_elbow(fa, m)),
+        _line("FLEXIBLE LINK (BRAIDED TYPE)", _U_SETS, 1, price_list.flexible_conductor(fa, m)),
+        _subheader("OPTIONAL"),
+        _line("MOUNTING CLAMP (W/O ROD & C-CHANNEL)", _U_SETS,
+              _mounting_clamp_qty(length), price_list.mounting_clamp(fa, m)),
+    ]
     if m == "AL":
-        items.append(_line(f"BI-METAL PLATE ({fa}A)", "No.", 2, price_list.bimetal(fa)))
-
+        items.append(_line("BI-METAL PLATE", _U_SETS, 2, price_list.bimetal(fa)))
+    items.append(_excluded("CONNECTION BARS (TX & MSB)", _U_LOTS))
     return items
 
 
 def _build_msb_riser(run: BusRun, piu_ka: int) -> tuple[list[BOQLineItem], list[BOQLineItem]]:
+    """MSB-Riser accessory template (skill spec):
+    Feeder · Flange End · End Closure · Horizontal Elbow · Vertical Elbow
+    · Fixed Hanger · Spring Hanger · Plug-in Opening
+    · OPTIONAL[ Plug-in Opening (Spare) · Bi-metal(Al) · Mounting Clamp ] · PIU."""
     fa = run.frame_rating_a
     m = run.material
-    items: list[BOQLineItem] = []
-
     length = run.length_m or 0.0
-    items.append(_line(
-        f"FEEDER C/W INTEGRAL EARTH {run.rating_a}A ({fa}A) 3P4W+{run.earth_pct}%E ({'ALUMINIUM' if m == 'AL' else 'COPPER'})",
-        "m", length, price_list.feeder(fa, run.earth_pct, m)
-    ))
-    items.append(_line(f"FLANGE END ({fa}A)", "No.", 1, price_list.flange_end(fa, m)))
-    items.append(_line(f"END CLOSURE ({fa}A)", "No.", 1, price_list.end_closure(fa, m)))
-    items.append(_line(f"HORIZONTAL ELBOW ({fa}A)", "No.", 1, price_list.elbow(fa, m)))
-    items.append(_line(f"VERTICAL ELBOW ({fa}A)", "No.", 1, price_list.vertical_elbow(fa, m)))
 
     fixed, spring = (run.num_fixed_hangers, run.num_spring_hangers)
     if fixed is None or spring is None:
         fixed, spring = _calc_hangers(length, run.hanger_spacing_m)
-    items.append(_line(f"FIXED HANGER ({fa}A)", "No.", fixed, price_list.fixed_hanger(fa, m)))
-    items.append(_line(f"SPRING HANGER ({fa}A)", "No.", spring, price_list.spring_hanger(fa, m)))
 
-    total_openings = len(run.piu_ratings) + run.spare_openings
-    if total_openings > 0:
-        items.append(_line(f"PLUG-IN OPENING ({fa}A)", "No.", total_openings, price_list.plugin_opening(fa, m)))
+    items: list[BOQLineItem] = [
+        _line(_FEEDER_DESC, _U_MTR, length, price_list.feeder(fa, run.earth_pct, m)),
+        _line("FLANGE END", _U_NOS, 2, price_list.flange_end(fa, m)),
+        _line("END CLOSURE", _U_NOS, 1, price_list.end_closure(fa, m)),
+        _line("HORIZONTAL ELBOW", _U_NOS, 2, price_list.elbow(fa, m)),
+        _line("VERTICAL ELBOW", _U_NOS, 2, price_list.vertical_elbow(fa, m)),
+        _line("FIXED HANGER", _U_SETS, fixed, price_list.fixed_hanger(fa, m)),
+        _line("SPRING HANGER", _U_SETS, spring, price_list.spring_hanger(fa, m)),
+    ]
+    if len(run.piu_ratings) > 0:
+        items.append(_line("PLUG-IN OPENING", _U_NOS, len(run.piu_ratings),
+                           price_list.plugin_opening(fa, m)))
 
+    optional: list[BOQLineItem] = []
+    if run.spare_openings > 0:
+        optional.append(_line("PLUG-IN OPENING (SPARE)", _U_NOS, run.spare_openings,
+                              price_list.plugin_opening(fa, m)))
+    optional.append(_line("MOUNTING CLAMP (W/O ROD & C-CHANNEL)", _U_SETS,
+                          _mounting_clamp_qty(length), price_list.mounting_clamp(fa, m)))
     if m == "AL":
-        items.append(_line(f"BI-METAL PLATE ({fa}A)", "No.", 2, price_list.bimetal(fa)))
+        optional.append(_line("BI-METAL PLATE", _U_SETS, 2, price_list.bimetal(fa)))
+    if optional:
+        items.append(_subheader("OPTIONAL"))
+        items.extend(optional)
 
-    piu_items = _build_piu(run, piu_ka)
-    return items, piu_items
+    return items, _build_piu(run, piu_ka)
 
 
 def _build_riser(run: BusRun, piu_ka: int) -> tuple[list[BOQLineItem], list[BOQLineItem]]:
+    """RISER (cable-entry) accessory template (skill spec):
+    Feeder · Cable Entry Box · End Closure · Fixed Hanger · Spring Hanger
+    · Plug-in Opening · OPTIONAL[ Plug-in Opening (Spare) · Bi-metal(Al) ] · PIU."""
     fa = run.frame_rating_a
     m = run.material
-    items: list[BOQLineItem] = []
-
     length = run.length_m or 0.0
-    items.append(_line(
-        f"FEEDER C/W INTEGRAL EARTH {run.rating_a}A ({fa}A) 3P4W+{run.earth_pct}%E ({'ALUMINIUM' if m == 'AL' else 'COPPER'})",
-        "m", length, price_list.feeder(fa, run.earth_pct, m)
-    ))
-    items.append(_line(f"CABLE ENTRY BOX ({fa}A)", "No.", 1, price_list.cable_entry_box(fa, m)))
-    items.append(_line(f"END CLOSURE ({fa}A)", "No.", 1, price_list.end_closure(fa, m)))
 
     fixed, spring = (run.num_fixed_hangers, run.num_spring_hangers)
     if fixed is None or spring is None:
         fixed, spring = _calc_hangers(length, run.hanger_spacing_m)
-    items.append(_line(f"FIXED HANGER ({fa}A)", "No.", fixed, price_list.fixed_hanger(fa, m)))
-    items.append(_line(f"SPRING HANGER ({fa}A)", "No.", spring, price_list.spring_hanger(fa, m)))
 
-    total_openings = len(run.piu_ratings) + run.spare_openings
-    if total_openings > 0:
-        items.append(_line(f"PLUG-IN OPENING ({fa}A)", "No.", total_openings, price_list.plugin_opening(fa, m)))
+    items: list[BOQLineItem] = [
+        _line(_FEEDER_DESC, _U_MTR, length, price_list.feeder(fa, run.earth_pct, m)),
+        _line("CABLE ENTRY BOX", _U_NOS, 1, price_list.cable_entry_box(fa, m)),
+        _line("END CLOSURE", _U_NOS, 1, price_list.end_closure(fa, m)),
+        _line("FIXED HANGER", _U_SETS, fixed, price_list.fixed_hanger(fa, m)),
+        _line("SPRING HANGER", _U_SETS, spring, price_list.spring_hanger(fa, m)),
+    ]
+    if len(run.piu_ratings) > 0:
+        items.append(_line("PLUG-IN OPENING", _U_NOS, len(run.piu_ratings),
+                           price_list.plugin_opening(fa, m)))
 
+    optional: list[BOQLineItem] = []
+    if run.spare_openings > 0:
+        optional.append(_line("PLUG-IN OPENING (SPARE)", _U_NOS, run.spare_openings,
+                              price_list.plugin_opening(fa, m)))
     if m == "AL":
-        items.append(_line(f"BI-METAL PLATE ({fa}A)", "No.", 2, price_list.bimetal(fa)))
+        optional.append(_line("BI-METAL PLATE", _U_SETS, 2, price_list.bimetal(fa)))
+    if optional:
+        items.append(_subheader("OPTIONAL"))
+        items.extend(optional)
 
-    piu_items = _build_piu(run, piu_ka)
-    return items, piu_items
+    return items, _build_piu(run, piu_ka)
 
 
 def _build_piu(run: BusRun, ka: int) -> list[BOQLineItem]:
@@ -149,7 +190,7 @@ def _build_piu(run: BusRun, ka: int) -> list[BOQLineItem]:
     for rating_a, qty in sorted(counts.items()):
         piu_items.append(_line(
             f"{rating_a}A TPN MCCB (HYUNDAI)",
-            "No.", qty, price_list.piu(rating_a, ka)
+            _U_NOS, qty, price_list.piu(rating_a, ka)
         ))
     return piu_items
 
@@ -300,7 +341,17 @@ def _write_boq_excel(runs: list[BOQRun], our_ref: str, client_name: str, subtota
 
 
 def _write_item_row(ws, row: int, item: BOQLineItem, border) -> None:
-    values = [item.description, item.unit, item.qty, item.unit_rate_myr, item.amount_myr]
+    if item.is_subheader:
+        c = ws.cell(row=row, column=1, value=item.description)
+        c.font = Font(italic=True, bold=True)
+        c.border = border
+        for col in range(2, 6):
+            ws.cell(row=row, column=col).border = border
+        return
+    if item.is_excluded:
+        values = [item.description, item.unit, "", "EXCLUDED", "EXCLUDED"]
+    else:
+        values = [item.description, item.unit, item.qty, item.unit_rate_myr, item.amount_myr]
     for col, val in enumerate(values, 1):
         c = ws.cell(row=row, column=col, value=val)
         c.border = border

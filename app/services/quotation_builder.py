@@ -344,13 +344,10 @@ def _run_title(run: BOQRun) -> str:
 
 
 def _short_desc(desc: str, run: BOQRun | None) -> str:
-    """The run title already carries rating/earth/material, so drop the
-    repetition from component lines (house format)."""
-    if run is None or not run.frame_rating_a:
-        return desc
-    if desc.upper().startswith("FEEDER C/W INTEGRAL EARTH"):
-        return "FEEDER C/W INTEGRAL EARTH"
-    return desc.replace(f" ({run.frame_rating_a}A)", "")
+    """Component descriptions are now emitted in final house wording by
+    boq_builder (no frame-rating suffix to strip), so this is a pass-through
+    kept only so callers don't need to change."""
+    return desc
 
 
 def _border_row(ws, row: int, cols: dict, border):
@@ -419,6 +416,24 @@ def _insert_item_block(ws, runs: list[BOQRun], flags: FlagAnswers, start_row: in
 def _write_quotation_row(ws, row: int, item: BOQLineItem, border,
                          cols: dict | None = None, run: BOQRun | None = None):
     cols = cols or DEFAULT_COLS
+
+    # OPTIONAL subheader: bold label only, no quantity/price.
+    if getattr(item, "is_subheader", False):
+        _border_row(ws, row, cols, border)
+        ws.cell(row=row, column=cols["desc"], value=item.description).font = Font(bold=True)
+        return
+
+    # Quoted-out line (Connection Bars): literal "EXCLUDED", no formula.
+    if getattr(item, "is_excluded", False):
+        _border_row(ws, row, cols, border)
+        ws.cell(row=row, column=cols["desc"], value=item.description)
+        if cols.get("unit"):
+            ws.cell(row=row, column=cols["unit"], value=item.unit)
+        for key in ("rate", "amount"):
+            c = ws.cell(row=row, column=cols[key], value="EXCLUDED")
+            c.alignment = Alignment(horizontal="right")
+        return
+
     mapping = [("desc", _short_desc(item.description, run)), ("unit", item.unit),
                ("qty", item.qty), ("rate", item.unit_rate_myr)]
     values = {cols[key]: val for key, val in mapping if cols.get(key)}

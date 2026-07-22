@@ -40,6 +40,12 @@ class BOQLineItem(BaseModel):
     qty: float
     unit_rate_myr: float
     amount_myr: float
+    # House-format rendering hints:
+    #   is_subheader → a label-only row like "OPTIONAL" (no qty/rate/amount)
+    #   is_excluded  → priced-out row like "CONNECTION BARS (TX & MSB)" that
+    #                  shows the literal text "EXCLUDED" instead of a number
+    is_subheader: bool = False
+    is_excluded: bool = False
 
 
 class BOQRun(BaseModel):
