@@ -37,9 +37,11 @@ def _runs():
         frame_rating_a=630,
         earth_pct=50,
         items=[
-            BOQLineItem(description="FEEDER C/W INTEGRAL EARTH 500A (630A) 3P4W+50%E (ALUMINIUM)",
+            # boq_builder now emits final house wording; quotation_builder no
+            # longer shortens, so the fixture uses the house descriptions.
+            BOQLineItem(description="FEEDER C/W INTEGRAL EARTH  (Horizontal)",
                         unit="m", qty=10, unit_rate_myr=100.0, amount_myr=1000.0),
-            BOQLineItem(description="END CLOSURE (630A)", unit="No.", qty=1,
+            BOQLineItem(description="END CLOSURE", unit="No.", qty=1,
                         unit_rate_myr=500.0, amount_myr=500.0),
         ],
     )]
@@ -140,7 +142,7 @@ def test_fill_template_totals_and_merges():
     assert ws.cell(row=grand_r, column=6).value == f"=SUM(F{sub_r},F{sst_r})"
 
     # Component line: shortened description, =QTY*RATE formula in F
-    feeder_row = _find_row(ws, lambda v: v == "FEEDER C/W INTEGRAL EARTH")
+    feeder_row = _find_row(ws, lambda v: v == "FEEDER C/W INTEGRAL EARTH  (Horizontal)")
     assert feeder_row is not None
     assert ws.cell(row=feeder_row, column=6).value == f"=D{feeder_row}*E{feeder_row}"
 
@@ -228,7 +230,7 @@ def test_fill_real_style_template():
 
     # Component line in the template's own columns with =E*G formula,
     # description shortened (title already carries the spec)
-    feeder_row = _find_row(ws, lambda v: v == "FEEDER C/W INTEGRAL EARTH")
+    feeder_row = _find_row(ws, lambda v: v == "FEEDER C/W INTEGRAL EARTH  (Horizontal)")
     assert ws.cell(row=feeder_row, column=5).value == 10       # Quantity (E)
     assert ws.cell(row=feeder_row, column=6).value == "m"      # Unit (F)
     assert ws.cell(row=feeder_row, column=7).value == 100.0    # Unit Rate (G)
