@@ -35,7 +35,8 @@ CRITICAL RULES — read every one before responding:
 0. FIRST CHECK THE SHEET IS AN SLD. Many uploads are NOT single-line diagrams:
    - Rate/price docs: Schedule of Unit Rates, Bill of Quantities, Load Schedule, cable schedule, spec/notes page (tables of "Description/Unit/Price", ampere lists with RM prices).
    - Architectural/other drawings: a FLOOR PLAN, socket/lighting LAYOUT, building ELEVATION, SECTION, or site plan (these ARE drawings but have no single-line runs).
-   In multi-page sets the first page is often a cover, elevation, or layout — the SLD may be on a later page.
+   - HT/MV-only sheets: a 33kV/11kV switchgear SLD (VCBs, CTs, PTs, protection relays, TNB incoming, GIS/AIS) has NO busduct — busduct is on the LV distribution sheet. Return no runs and flag "HT/MV switchgear sheet — busduct is on the LV single-line, not this page."
+   In multi-page sets the first page is often a cover, elevation, layout, or HT sheet — the LV busduct SLD may be on a later page.
    If the sheet shown is not a single-line schematic, return "runs": [] and add a global_flag naming what it is, e.g. "This sheet is a <floor plan / elevation / rate schedule>, not an SLD — no busduct runs extracted (check the other pages for the single-line diagram)." Do NOT invent runs.
 
 1. QUOTE BUSDUCT ONLY — NOT CABLE. This is the most important rule.
