@@ -37,6 +37,7 @@ CRITICAL RULES — read every one before responding:
 1. QUOTE BUSDUCT ONLY — NOT CABLE. This is the most important rule.
    - A run is BUSDUCT (busway) only if its label says so, e.g. "1250A TPN ALU. BUSDUCT", "600A TPN 3 PHASE ALU. BUSDUCT", "2000A TPN CU BUSDUCT", "BUSWAY", "BUS TRUNKING". The word may sit on its own line with the ampere value just above or below it (e.g. "BUSDUCT" with "1,000 A" underneath) — read them together. Quote these.
    - A run is CABLE if labelled like "6 NOS 4 x 400mm² 1C XLPE/PVC ALU. CABLE", "4 x 240mm.sq ... CABLE", "NYY 4 x ...", "... IN TRUNKING/ON CABLE TRAY". Cables also feed DBs, SSBs, machines, pumps, EV chargers, lifts. DO NOT quote cable — ignore it completely.
+   - The BUSBARS INSIDE a switchboard are NOT busduct — e.g. "400V 2000A TPN ... SLEEVED TINNED COPPER BUSBARS", "busbar chamber". Only quote busduct that RUNS BETWEEN boards/levels (labelled "... BUSDUCT"/"BUSWAY"), never a board's internal busbar.
    - Read the label on EACH connection to decide. Never assume by position.
 
 2. TX→MSB CAN BE EITHER BUSDUCT OR CABLE — you must check.
@@ -55,13 +56,13 @@ CRITICAL RULES — read every one before responding:
    - Transformer LV side → MSB, as busduct → type "TX-MSB", routing "FROM TX-n TO MSB-n". (Also genset→MSB and MSB↔MSB bus-tie busduct → "TX-MSB".)
    - Starts at an MSB flange end (goes up the building) → type "MSB-Riser", routing "FROM MSB-n TO LEVEL n".
    - Starts at a cable feed-in / joint box / termination box → type "RISER", routing "FROM LEVEL x TO LEVEL y".
-   - A building often has SEVERAL separate riser busducts (e.g. R-A/CB-R, R-B/CB-R, EMSB emergency riser, normal riser) each running up its own levels — extract EACH as its own run, named by its riser/board code. Do not merge them.
-   - Use the actual board/level/riser names printed on the drawing (MSB-T1, EMSB, R-A/CB-R, SSB/L12, LEVEL 7, ROOF, etc.).
+   - A building often has SEVERAL separate riser busducts — by code (R-A/CB-R, R-B/CB-R) or by supply function ("NORMAL SUPPLY BUSDUCT RISER", "ESSENTIAL SUPPLY BUSDUCT RISER", EMSB emergency riser) — each running up its own levels. Extract EACH as its own run, named as labelled. Do not merge them.
+   - Use the actual board/level/riser names printed on the drawing (MSB-T1, EMSB, R-A/CB-R, NORMAL/ESSENTIAL SUPPLY RISER, SSB/L12, LEVEL 7, ROOF, etc.).
 
 5. MATERIAL — read "ALU/AL" or "CU/COPPER" from the busduct label. If absent, default AL and flag.
 
 6. EARTH % / PHASES
-   - Earth: shown "50%E"/"100%E" → use it. "1/2 earth" = 50%E. "100% neutral + integral earth" → still price 4W+50%E. Not shown → default 50%E and flag.
+   - Earth: shown "50%E"/"100%E" → use it. "1/2 earth" = 50%E. "100% neutral + integral earth" → still price 4W+50%E. "+E" / "+ E" / "c/w integral earth" means earth is integral (a feeder always has it) — NOT a 100% earth; still default 50%E unless a % is given. Not shown → default 50%E and flag.
    - Phases: "3P4W" → phases "3P4W". "3P5W" → phases "3P5W" (5-wire) and flag "3P5W — price on 5W feeder column".
 
 7. PIU (plug-in units on a riser) — list each plug-in/tap-off MCCB rating shown along the run (e.g. 100A, 250A, 400A TPN). If the kA interrupting rating isn't shown, flag it (default 26kA).
