@@ -10,6 +10,9 @@ class Project(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     our_ref: Mapped[str] = mapped_column(String(50), unique=True)
     client_name: Mapped[str] = mapped_column(String(200))
+    # Development/project name for the quotation's PROJECT line (distinct from
+    # client_name, which is the "To" contractor/customer).
+    project_title: Mapped[str | None] = mapped_column(String(300), nullable=True)
     attn: Mapped[str | None] = mapped_column(String(200), nullable=True)
     me_consultant: Mapped[str | None] = mapped_column(String(200), nullable=True)
     salesperson_id: Mapped[int | None] = mapped_column(ForeignKey("salespeople.id"), nullable=True)

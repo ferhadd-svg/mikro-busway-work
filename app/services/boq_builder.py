@@ -82,6 +82,19 @@ def _mounting_clamp_qty(length_m: float) -> int:
     return max(2, math.ceil((length_m or 0.0) / 2.0))
 
 
+def _bimetal_line(fa: int) -> BOQLineItem:
+    """Bi-metal plate (aluminium only), house format e.g.
+    'BI-METAL PLATE (3 x 80mm x 230mm, 12 pcs/set)', qty 1 SET. The plate
+    dimensions come from the price list's Bi-Metal Plate sheet; pcs/set = No×4."""
+    dims = price_list.bimetal_dims(fa)
+    if dims:
+        no, w, l = dims
+        desc = f"BI-METAL PLATE ({no} x {w:.0f}mm x {l:.0f}mm, {no * 4} pcs/set)"
+    else:
+        desc = "BI-METAL PLATE"
+    return _line(desc, _U_SETS, 1, price_list.bimetal(fa))
+
+
 def _build_tx_msb(run: BusRun) -> list[BOQLineItem]:
     """TX-MSB accessory template (skill spec):
     Feeder · Flange End · Horizontal Elbow · Vertical Elbow · Flexible Link
@@ -100,7 +113,7 @@ def _build_tx_msb(run: BusRun) -> list[BOQLineItem]:
               _mounting_clamp_qty(length), price_list.mounting_clamp(fa, m)),
     ]
     if m == "AL":
-        items.append(_line("BI-METAL PLATE", _U_SETS, 2, price_list.bimetal(fa)))
+        items.append(_bimetal_line(fa))
     items.append(_excluded("CONNECTION BARS (TX & MSB)", _U_LOTS))
     return items
 
@@ -138,7 +151,7 @@ def _build_msb_riser(run: BusRun, piu_ka: int) -> tuple[list[BOQLineItem], list[
     optional.append(_line("MOUNTING CLAMP (W/O ROD & C-CHANNEL)", _U_SETS,
                           _mounting_clamp_qty(length), price_list.mounting_clamp(fa, m)))
     if m == "AL":
-        optional.append(_line("BI-METAL PLATE", _U_SETS, 2, price_list.bimetal(fa)))
+        optional.append(_bimetal_line(fa))
     if optional:
         items.append(_subheader("OPTIONAL"))
         items.extend(optional)
@@ -174,7 +187,7 @@ def _build_riser(run: BusRun, piu_ka: int) -> tuple[list[BOQLineItem], list[BOQL
         optional.append(_line("PLUG-IN OPENING (SPARE)", _U_NOS, run.spare_openings,
                               price_list.plugin_opening(fa, m)))
     if m == "AL":
-        optional.append(_line("BI-METAL PLATE", _U_SETS, 2, price_list.bimetal(fa)))
+        optional.append(_bimetal_line(fa))
     if optional:
         items.append(_subheader("OPTIONAL"))
         items.extend(optional)
@@ -230,6 +243,7 @@ def build_boq(
             material=run.material,
             items=items,
             piu_items=piu_items,
+            rating_a=run.rating_a,
             frame_rating_a=run.frame_rating_a,
             earth_pct=run.earth_pct,
             phases=run.phases,

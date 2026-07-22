@@ -126,3 +126,20 @@ def test_riser_spare_openings_render_as_optional_spare_line():
     d = _descs(items)
     assert "PLUG-IN OPENING (SPARE)" in d
     assert "OPTIONAL" in d
+
+
+def test_bimetal_line_uses_price_list_dimensions(monkeypatch):
+    from app.services import boq_builder as bb
+    monkeypatch.setattr(bb.price_list, "bimetal_dims", lambda fa: (3, 80.0, 230.0))
+    monkeypatch.setattr(bb.price_list, "bimetal", lambda fa: 1800)
+    line = bb._bimetal_line(6300)
+    assert line.description == "BI-METAL PLATE (3 x 80mm x 230mm, 12 pcs/set)"
+    assert line.qty == 1 and line.unit == "SETS" and line.unit_rate_myr == 1800
+
+
+def test_bimetal_line_falls_back_without_dimensions(monkeypatch):
+    from app.services import boq_builder as bb
+    monkeypatch.setattr(bb.price_list, "bimetal_dims", lambda fa: None)
+    monkeypatch.setattr(bb.price_list, "bimetal", lambda fa: 480)
+    line = bb._bimetal_line(2000)
+    assert line.description == "BI-METAL PLATE" and line.qty == 1

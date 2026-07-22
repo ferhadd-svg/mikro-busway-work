@@ -6,6 +6,7 @@ import datetime
 class ProjectCreate(BaseModel):
     our_ref: str
     client_name: str
+    project_title: str | None = None
     attn: str | None = None
     me_consultant: str | None = None
     salesperson_id: int | None = None
@@ -15,6 +16,7 @@ class ProjectOut(BaseModel):
     id: int
     our_ref: str
     client_name: str
+    project_title: str | None = None
     attn: str | None
     me_consultant: str | None
     salesperson_id: int | None
@@ -39,6 +41,7 @@ class ProjectUpdate(BaseModel):
     # All optional — used to correct Step 1 details after the project exists.
     our_ref: str | None = None
     client_name: str | None = None
+    project_title: str | None = None
     attn: str | None = None
     me_consultant: str | None = None
     salesperson_id: int | None = None

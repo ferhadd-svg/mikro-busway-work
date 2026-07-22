@@ -22,15 +22,18 @@ from app.models.salesperson import Salesperson
 from app.config import settings
 
 
-REMARKS_AL = [
-    "The quantities quoted are rough estimation only. Final busway amount shall based on the actual delivery and approved shop-drawings.",
-    "All Bi-Metal materials for Aluminum Busway are by contractor.",
-    "Should any modification on factory standard dimensions are chargeable.",
-    "All horizontal hanger support are by contractor.",
-    "Any delivery to other than project site are subject to additional transportation surcharge.",
-    "The prices quoted are EXCLUDING all installation works, all termination of the busway to panels or transformers, testing and commissioning at site.",
-    "Warranty against manufacturing defects is 12 calendar months after delivery. This warranty does not cover reimbursement of consequential or incidental damages, labour, transportation, removal of the installation or any other expenses which may be incurred in connection with the repair and replacement.",
-]
+def _remarks_al(flags) -> list[str]:
+    today = date.today().strftime("%d-%m-%Y")
+    return [
+        "The quantities quoted are rough estimation only. Final busway amount shall based on the actual delivery and approved shop-drawings.",
+        "All Bi-Metal materials for Aluminum Busway are by contractor.",
+        f"The prices quoted are based on {today} LME Aluminium @USD {flags.lme_usd_per_mt:,.0f}/MT.",
+        "Should any modification on factory standard dimensions are chargeable.",
+        "All horizontal hanger support are by contractor.",
+        "Any delivery to other than project site are subject to additional transportation surcharge.",
+        "The prices quoted are EXCLUDING all installation works, all termination of the busway to panels or transformers, testing and commissioning at site.",
+        "Warranty against manufacturing defects is 12 calendar months after delivery. This warranty does not cover reimbursement of consequential or incidental damages, labour, transportation, removal of the installation or any other expenses which may be incurred in connection with the repair and replacement.",
+    ]
 
 
 def _remarks_cu(flags) -> list[str]:
@@ -56,13 +59,9 @@ def _terms_block(runs: list, flags) -> list[tuple[str, str]]:
 
 
 def _terms_al(flags) -> list[tuple[str, str]]:
-    validity = (
-        f"Prices are based on LME Aluminium at USD {flags.lme_usd_per_mt:,.0f}/MT. "
-        f"Any subsequent adjustment shall follow the prevailing LME Aluminium price within a ±2% variation."
-    )
     return [
         ("Manufacturer", "Mikro Busway Sdn Bhd, Malaysia."),
-        ("Validity",     validity),
+        ("Validity",     f"Based on LME Alu.@USD{flags.lme_usd_per_mt:,.0f}/MT and thereafter depands on current LME price"),
         ("Delivery",     "Approximately 8 to 10 working weeks upon receipt of approval drawings."),
         ("Price",        "Ex-Nilai Factory in Ringgit Malaysia (RM)."),
         ("Payment",      "30% Deposit is required upon confirmation of order.\nBalance on Irrevocable Letter of Credit 60 Days."),
@@ -89,7 +88,7 @@ def _remarks_for_runs(runs: list[BOQRun], flags) -> list[str]:
     materials = {r.material for r in runs}
     if "CU" in materials:
         return _remarks_cu(flags)
-    return REMARKS_AL
+    return _remarks_al(flags)
 
 
 def build_quotation(
@@ -101,6 +100,7 @@ def build_quotation(
     attn: str | None,
     me_consultant: str | None,
     template_path: Path | None,
+    project_title: str | None = None,
 ) -> Path:
     """
     Write a priced quotation Excel. If a salesperson template exists, use it
@@ -109,7 +109,7 @@ def build_quotation(
     if template_path and template_path.exists():
         wb = openpyxl.load_workbook(str(template_path))
         ws = wb.active
-        _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_consultant)
+        _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_consultant, project_title)
     else:
         wb = _build_from_scratch(runs, flags, salesperson, our_ref, client_name, attn, me_consultant)
 
@@ -153,7 +153,7 @@ def _find_header_columns(ws) -> dict | None:
     return None
 
 
-def _fill_labelled_fields(ws, salesperson, our_ref, client_name, attn, me_consultant):
+def _fill_labelled_fields(ws, salesperson, our_ref, client_name, attn, me_consultant, project_title=None):
     """Real templates label their fields ("To", "Attn", "OUR REF : ") instead
     of using <<tokens>>. Fill each value in after the label's colon."""
     neighbour_labels = {
@@ -164,6 +164,7 @@ def _fill_labelled_fields(ws, salesperson, our_ref, client_name, attn, me_consul
     }
     inline_labels = {
         "OUR REF": our_ref or "",
+        "PROJECT": project_title or "",
         "M&E": me_consultant or "",
         "M & E": me_consultant or "",
     }
@@ -189,7 +190,7 @@ def _fill_labelled_fields(ws, salesperson, our_ref, client_name, attn, me_consul
                         target.value = f": {value}"
 
 
-def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_consultant):
+def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_consultant, project_title=None):
     """
     Fill the salesperson template: header fields, item block, totals.
     Works with both <<token>> templates and label-styled real templates.
@@ -206,7 +207,7 @@ def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_
         "<<LME_USD>>": f"USD {flags.lme_usd_per_mt:,.0f}/MT",
         "<<USD_MYR>>": f"USD 1 = RM {flags.usd_to_myr:.4f}",
     })
-    _fill_labelled_fields(ws, salesperson, our_ref, client_name, attn, me_consultant)
+    _fill_labelled_fields(ws, salesperson, our_ref, client_name, attn, me_consultant, project_title)
 
     # Find the row that contains "SUB-TOTAL" or "SUBTOTAL"
     subtotal_row = None
@@ -254,6 +255,54 @@ def _fill_template(ws, runs, flags, salesperson, our_ref, client_name, attn, me_
 
     sum_rows = _insert_item_block(ws, runs, flags, insert_row, cols)
     _write_totals(ws, runs, insert_row, (cols or {}).get("amount"), sum_rows)
+    _fill_terms_and_remarks(ws, runs, flags)
+
+
+def _fill_terms_and_remarks(ws, runs, flags):
+    """Rewrite the Manufacturer/Validity/Delivery/Price/Payment terms and the
+    numbered Remarks so they match the runs' material and the entered LME +
+    today's date — instead of leaving the template's static (often aluminium,
+    stale-LME) footer. Uses the same material-aware builders as the
+    from-scratch path."""
+    bold = Font(bold=True)
+    manf_row = remarks_row = sig_row = None
+    for row in ws.iter_rows():
+        r = row[0].row
+        b = str(ws.cell(row=r, column=2).value or "").strip().upper()
+        if b.startswith("MANUFACTURER") and manf_row is None:
+            manf_row = r
+        if b.startswith("REMARKS") and remarks_row is None:
+            remarks_row = r
+        if "MIKRO BUSWAY SDN BERHAD" in b and sig_row is None:
+            sig_row = r
+
+    # Terms — clear the region then rewrite one label/value per row.
+    if manf_row and remarks_row and manf_row < remarks_row:
+        for rr in range(manf_row, remarks_row):
+            ws.cell(row=rr, column=2).value = None
+            ws.cell(row=rr, column=3).value = None
+        rr = manf_row
+        for label, value in _terms_block(runs, flags):
+            if rr >= remarks_row:
+                break
+            ws.cell(row=rr, column=2, value=label).font = bold
+            c = ws.cell(row=rr, column=3, value=f": {value}")
+            c.alignment = Alignment(wrap_text=True, vertical="top")
+            if "\n" in value:
+                ws.row_dimensions[rr].height = 15 * (value.count("\n") + 1)
+            rr += 1
+
+    # Remarks — clear the region then rewrite the numbered list.
+    if remarks_row:
+        end = sig_row if (sig_row and sig_row > remarks_row) else remarks_row + 14
+        for rr in range(remarks_row + 1, end):
+            ws.cell(row=rr, column=2).value = None
+        rr = remarks_row + 1
+        for i, text in enumerate(_remarks_for_runs(runs, flags), 1):
+            if rr >= end:
+                break
+            ws.cell(row=rr, column=2, value=f"{i}. {text}")
+            rr += 1
 
 
 def _shift_images(ws, threshold: int, delta: int):
@@ -335,10 +384,13 @@ def _replace_tokens(ws, token_map: dict):
 
 def _run_title(run: BOQRun) -> str:
     """Mikro house-format spec title, e.g.
-    'MIKRO BUSWAY # 5000A TPNE, 3P4W+100%E, 600VAC, 50Hz (COPPER) - IP54'."""
+    'MIKRO BUSWAY # 6000A (6300A) TPNE, 3P4W+50%E, 600VAC, 50Hz (ALUMINIUM) - IP54'."""
     material = "ALUMINIUM" if run.material == "AL" else "COPPER"
     if run.frame_rating_a and run.earth_pct:
-        return (f"MIKRO BUSWAY # {run.frame_rating_a}A TPNE, "
+        # Show nominal (frame) when the nominal is known, else just the frame.
+        rating = (f"{run.rating_a}A ({run.frame_rating_a}A)"
+                  if run.rating_a else f"{run.frame_rating_a}A")
+        return (f"MIKRO BUSWAY # {rating} TPNE, "
                 f"{run.phases}+{run.earth_pct}%E, 600VAC, 50Hz ({material}) - IP54")
     return f"MIKRO BUSWAY — {run.run_id} ({run.run_type}, {material})"
 
