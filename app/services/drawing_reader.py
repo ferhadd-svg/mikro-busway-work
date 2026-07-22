@@ -10,6 +10,7 @@ Returns DrawingExtraction (structured runs + flags).
 
 import base64
 import json
+import math
 import re
 from pathlib import Path
 from typing import Optional
@@ -27,44 +28,46 @@ from app.config import settings
 from app.schemas.boq import DrawingExtraction, BusRun
 from app.services.price_list import resolve_frame_rating
 
-SYSTEM_PROMPT = """You are an expert electrical engineer specialising in busduct/busway systems for the Malaysian market (Mikro Busway). You read single-line drawings (SLD) and extract structured busway data.
+SYSTEM_PROMPT = """You are an expert electrical engineer specialising in busduct/busway systems for the Malaysian market (Mikro Busway). You read single-line drawings (SLD) and extract structured busway data. The drawing may be supplied as a full-sheet overview plus several high-resolution tiles that together cover the same sheet — use the tiles to read small labels and the overview to understand how runs connect.
 
 CRITICAL RULES — read every one before responding:
 
-1. TWO-PASS METHOD
-   Pass 1: Find the TX/transformer first → any busduct connected to the TX LV side is a TX-MSB run.
-   Pass 2: Find all riser busducts → classify by WHERE they start:
-     - Starts at MSB flange end → type = "MSB-Riser", routing "FROM MSB TO <level>"
-     - Starts at cable entry / joint box / termination box / flange end box (cable-fed) → type = "RISER", routing "FROM <level> TO <level>"
+1. QUOTE BUSDUCT ONLY — NOT CABLE. This is the most important rule.
+   - A run is BUSDUCT (busway) only if its label says so, e.g. "1250A TPN ALU. BUSDUCT", "2000A TPN CU BUSDUCT", "BUSWAY", "BUS TRUNKING". Quote these.
+   - A run is CABLE if labelled like "6 NOS 4 x 400mm² 1C XLPE/PVC ALU. CABLE", "4 x 240mm.sq ... CABLE", "... IN TRUNKING/ON CABLE TRAY". Cables also feed DBs, SSBs, machines, pumps, EV chargers, lifts. DO NOT quote cable — ignore it completely.
+   - Read the label on EACH connection to decide. Never assume by position.
 
-2. RATINGS
-   - Read the NOMINAL rating from the drawing label (e.g. "500A" → nominal=500).
-   - Compute frame_rating: use the next standard frame in [200,400,630,800,1000,1250,1600,2000,2500,3200,4000,5000].
-     Example: 500A nominal → 630A frame; 100A nominal → 200A frame.
+2. TX→MSB CAN BE EITHER BUSDUCT OR CABLE — you must check.
+   - Some projects run the transformer→MSB feed as busduct ("... BUSDUCT"): quote it as a TX-MSB run.
+   - Others run it as cable ("N NOS 4 x 400mm² ... CABLE"): ignore it.
+   - Decide strictly from the connection's own label, not from the fact that it is a TX→MSB link.
 
-3. EARTH PERCENTAGE
-   - If a % is shown (e.g. "50%E", "100%E") → use it.
-   - If NOT shown → default to 50%E and add a flag "earth_pct not shown on drawing, defaulted to 50%E".
+3. RATING — read the BUSDUCT label, never the breaker or CT.
+   - The busduct rating is the ampere value printed ON the busduct run itself (e.g. "1250A TPN ALU. BUSDUCT" → 1250A).
+   - DO NOT use the ACB/MCCB frame size (e.g. "2000A TPN ACB", "1600AF") — that is the breaker, not the busduct.
+   - DO NOT use a CT ratio (e.g. "2000/5A CT", "CL5P10") — that is metering, not the busduct.
+   - If a busduct run has no ampere label of its own and the only nearby numbers are an ACB frame or CT ratio, set rating_a to null and add a flag "busduct rating not labelled — only ACB/CT visible, needs confirmation". Do NOT guess from the breaker/CT.
+   - frame_rating = the next standard frame in [200,400,630,800,1000,1250,1600,2000,2500,3200,4000,5000] (e.g. 500→630, 100→200). A busduct already labelled 1250A stays 1250A.
 
-4. MATERIAL
-   - Read "AL" or "CU" from the drawing label.
-   - If not stated → add a flag "material not shown, needs confirmation" and default to AL.
+4. RUN TYPE & ROUTING — classify each busduct run by where it starts:
+   - Transformer LV side → MSB, as busduct → type "TX-MSB", routing "FROM TX-n TO MSB-n".
+   - Starts at an MSB flange end (goes up the building) → type "MSB-Riser", routing "FROM MSB-n TO LEVEL n".
+   - Starts at a cable feed-in / joint box / termination box → type "RISER", routing "FROM LEVEL x TO LEVEL y".
+   - Use the actual board/level names printed on the drawing (MSB-T1, SSB/L12, LEVEL 7, ROOF, etc.).
 
-5. PIU
-   - List each PIU (plug-in unit) rating shown along the run (e.g. 60A TPN MCCB, 150A TPN MCCB).
-   - If the kA interrupting rating is not shown, flag it.
+5. MATERIAL — read "ALU/AL" or "CU/COPPER" from the busduct label. If absent, default AL and flag.
 
-6. LENGTHS
-   - Read feeder lengths from the drawing if shown (from elevation or floor-to-floor dimensions).
-   - If NOT readable → set length_m to null and add a flag.
+6. EARTH % / PHASES
+   - Earth: shown "50%E"/"100%E" → use it. "1/2 earth" = 50%E. "100% neutral + integral earth" → still price 4W+50%E. Not shown → default 50%E and flag.
+   - Phases: "3P4W" → phases "3P4W". "3P5W" → phases "3P5W" (5-wire) and flag "3P5W — price on 5W feeder column".
 
-7. HANGERS
-   - Estimate fixed/spring hanger quantities from the run length if given (typical spacing: 1.5m fixed, alternate spring).
-   - If length not known, set both to null and flag.
+7. PIU (plug-in units on a riser) — list each plug-in/tap-off MCCB rating shown along the run (e.g. 100A, 250A, 400A TPN). If the kA interrupting rating isn't shown, flag it (default 26kA).
 
-8. FLAGS
-   - Add a flag for every uncertain or missing value.
-   - Flag format: plain English string describing what is missing and what was assumed.
+8. LENGTHS — an SLD does NOT show physical run length. Set length_m to null and flag "length not on SLD — needs layout/section or user estimate" unless a length is explicitly dimensioned.
+
+9. HANGERS — leave num_fixed_hangers/num_spring_hangers null when length is unknown (they are computed later).
+
+10. FLAGS — add a plain-English flag for every uncertain, missing, or assumed value. When unsure about a rating, FLAG IT rather than guessing.
 
 Respond with ONLY a JSON object — no markdown fences, no commentary. Schema:
 {
@@ -72,12 +75,12 @@ Respond with ONLY a JSON object — no markdown fences, no commentary. Schema:
     {
       "run_id": "RUN-1",
       "run_type": "TX-MSB" | "MSB-Riser" | "RISER",
-      "rating_a": <int nominal>,
+      "rating_a": <int busduct rating, or null if only ACB/CT visible>,
       "frame_rating_a": <int frame>,
       "material": "AL" | "CU",
       "earth_pct": 50 | 100,
-      "routing": "<string>",
-      "phases": "3P4W",
+      "routing": "<string, e.g. FROM MSB-T1 TO LEVEL 7>",
+      "phases": "3P4W" | "3P5W",
       "length_m": <float or null>,
       "hanger_spacing_m": 1.5,
       "num_fixed_hangers": <int or null>,
@@ -111,8 +114,10 @@ def _pdf_to_images(pdf_path: Path, max_pages: int = MAX_PDF_PAGES) -> tuple[list
         paths = []
         for i in range(min(total_pages, max_pages)):
             page = doc.load_page(i)
-            # PDFs default to 72 DPI; zoom to ~150 DPI for a legible raster.
-            pix = page.get_pixmap(matrix=fitz.Matrix(150 / 72, 150 / 72))
+            # PDFs default to 72 DPI; render at ~220 DPI so small busduct/ACB
+            # labels survive. The page is tiled afterwards, so a big raster is
+            # fine — it is never sent to the model whole at this size.
+            pix = page.get_pixmap(matrix=fitz.Matrix(220 / 72, 220 / 72))
             out_path = pdf_path.with_name(f"{pdf_path.stem}_p{i + 1}.png")
             pix.save(str(out_path))
             paths.append(out_path)
@@ -150,20 +155,64 @@ def _image_to_b64(image_path: Path) -> tuple[str, str]:
     return data, media_type
 
 
-def _resize_if_needed(image_path: Path, max_px: int = 1568) -> Path:
-    """Resize image so longest side ≤ max_px. Returns path (may be new file).
-    Claude vision downscales anything above 1568 px server-side anyway, so
-    resizing locally saves upload time with no loss in what the model sees."""
+# Claude vision keeps full detail up to ~1568 px on the long edge and
+# downscales anything larger server-side. A dense A0/A1 SLD is far larger, so
+# sending it as one image (the old behaviour) blurred every rating label. We
+# instead send a downscaled OVERVIEW (for global layout/routing) plus a grid
+# of high-resolution TILES (so each small label is read at full detail).
+_VISION_MAX_PX = 1568
+_TILE_TARGET_PX = 1500     # aim for tiles around this long-edge
+_TILE_OVERLAP = 0.10       # 10% overlap so labels on a seam aren't split
+_MAX_TILES = 15            # cap total tiles per page to bound cost/latency
+
+
+def _downscale(image_path: Path, max_px: int = _VISION_MAX_PX) -> Path:
+    """Return a copy scaled so the longest side ≤ max_px (or the original if
+    already small enough)."""
     img = Image.open(image_path)
     w, h = img.size
     if max(w, h) <= max_px:
         return image_path
     ratio = max_px / max(w, h)
-    new_size = (int(w * ratio), int(h * ratio))
-    img_resized = img.resize(new_size, Image.LANCZOS)
-    out_path = image_path.with_stem(image_path.stem + "_resized")
-    img_resized.save(out_path)
-    return out_path
+    out = image_path.with_stem(image_path.stem + "_overview")
+    img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS).save(out)
+    return out
+
+
+def _tile_image(image_path: Path, max_tiles: int = _MAX_TILES) -> list[Path]:
+    """Split a large image into an overlapping grid of tiles, each roughly
+    _TILE_TARGET_PX on the long edge, so text stays legible after the model's
+    server-side downscale. Returns [] for images small enough to send whole."""
+    img = Image.open(image_path)
+    W, H = img.size
+    if max(W, H) <= _VISION_MAX_PX:
+        return []
+
+    cols = max(1, math.ceil(W / _TILE_TARGET_PX))
+    rows = max(1, math.ceil(H / _TILE_TARGET_PX))
+    # Bound the tile count (very large sheets → coarser tiles).
+    while cols * rows > max_tiles:
+        if cols >= rows and cols > 1:
+            cols -= 1
+        elif rows > 1:
+            rows -= 1
+        else:
+            break
+
+    tw, th = W / cols, H / rows
+    ox, oy = tw * _TILE_OVERLAP, th * _TILE_OVERLAP
+    tiles: list[Path] = []
+    for r in range(rows):
+        for c in range(cols):
+            left = max(0, int(c * tw - ox))
+            top = max(0, int(r * th - oy))
+            right = min(W, int((c + 1) * tw + ox))
+            bottom = min(H, int((r + 1) * th + oy))
+            crop = img.crop((left, top, right, bottom))
+            out = image_path.with_stem(f"{image_path.stem}_t{r}_{c}")
+            crop.save(out)
+            tiles.append(out)
+    return tiles
 
 
 def _parse_json_response(raw_text: str) -> Optional[dict]:
@@ -274,7 +323,16 @@ def read_drawing(drawing_path: Path) -> DrawingExtraction:
     else:
         image_paths = [_ensure_supported_image(drawing_path)]
 
-    image_paths = [_resize_if_needed(p) for p in image_paths]
+    # For each page: a downscaled OVERVIEW (global layout/routing) + high-res
+    # TILES (legible labels). Split the tile budget across pages.
+    per_page_tiles = max(2, _MAX_TILES // max(1, len(image_paths)))
+    prepared: list[tuple[str, Path]] = []
+    for idx, page_path in enumerate(image_paths, 1):
+        tag = f"page {idx} of {len(image_paths)}" if len(image_paths) > 1 else "full sheet"
+        prepared.append((f"OVERVIEW ({tag}) — use for how runs connect:", _downscale(page_path)))
+        tiles = _tile_image(page_path, max_tiles=per_page_tiles)
+        for j, tile in enumerate(tiles, 1):
+            prepared.append((f"DETAIL TILE {j}/{len(tiles)} ({tag}) — read labels here:", tile))
 
     if not settings.anthropic_api_key:
         raise RuntimeError(
@@ -284,10 +342,9 @@ def read_drawing(drawing_path: Path) -> DrawingExtraction:
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
     content = []
-    for idx, image_path in enumerate(image_paths, 1):
-        if len(image_paths) > 1:
-            content.append({"type": "text", "text": f"Drawing page {idx} of {len(image_paths)}:"})
-        b64_data, media_type = _image_to_b64(image_path)
+    for label, path in prepared:
+        content.append({"type": "text", "text": label})
+        b64_data, media_type = _image_to_b64(path)
         content.append({
             "type": "image",
             "source": {
@@ -298,8 +355,10 @@ def read_drawing(drawing_path: Path) -> DrawingExtraction:
         })
     content.append({
         "type": "text",
-        "text": "Read this single-line drawing (all pages shown above) and extract all "
-                "busway runs using the two-pass method. Return the JSON object.",
+        "text": "The overview and tiles above are the SAME single-line drawing. "
+                "Extract every BUSDUCT run (ignore all cable). Read ratings from the "
+                "busduct labels only — never from an ACB frame size or CT ratio. "
+                "Return the JSON object.",
     })
 
     try:

@@ -11,7 +11,9 @@ _data_root = Path(os.environ.get("RENDER_PROJECT_DIR", str(BASE_DIR))) / "data"
 
 class Settings(BaseSettings):
     anthropic_api_key: str = ""   # optional — only needed for AI drawing read
-    claude_model: str = "claude-sonnet-4-6"
+    # Reading a dense A0/A1 SLD is the hardest task in the app, so it defaults
+    # to the strongest vision model. Override with CLAUDE_MODEL if needed.
+    claude_model: str = "claude-opus-4-8"
     database_url: str = f"sqlite:///{_data_root}/mikro_busway.db"
     data_dir: Path = _data_root
     projects_dir: Path = _data_root / "projects"
