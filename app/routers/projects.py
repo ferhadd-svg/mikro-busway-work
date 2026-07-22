@@ -21,7 +21,9 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.project import Project
 from app.models.salesperson import Salesperson
-from app.schemas.project import ProjectCreate, ProjectOut, ProjectOutcomeUpdate
+from app.models.customer_contact import CustomerContact
+from app.models.customer_note import CustomerNote
+from app.schemas.project import ProjectCreate, ProjectOut, ProjectOutcomeUpdate, EmailQuotationRequest
 from app.schemas.boq import DrawingExtraction, FlagAnswers, BOQResponse
 from app.services.drawing_reader import read_drawing
 from app.services.price_list import price_list
@@ -30,6 +32,7 @@ from app.services.quotation_builder import build_quotation
 from app.services.auth import get_current_user, require_role
 from app.services.customers import get_or_create_customer
 from app.services.projects import apply_outcome
+from app.services.email import send_quotation_email, email_configured
 from app.config import settings
 
 # Every endpoint in this router requires a logged-in user (any role) — see
@@ -354,6 +357,74 @@ def download_quotation(project_id: int, db: Session = Depends(get_db)):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=project.quotation_filename,
     )
+
+
+# ------------------------------------------------------------------ #
+#  Email the quotation                                                #
+# ------------------------------------------------------------------ #
+
+@router.get("/{project_id}/email-recipients")
+def get_email_recipients(project_id: int, db: Session = Depends(get_db)):
+    """Suggested recipients so the UI can prefill the To field — ProjectOut
+    carries no emails. Primary contact is returned first (ordered)."""
+    project = _get_or_404(project_id, db)
+    sp = db.get(Salesperson, project.salesperson_id) if project.salesperson_id else None
+    contacts = []
+    if project.customer_id:
+        rows = (
+            db.query(CustomerContact)
+            .filter(CustomerContact.customer_id == project.customer_id)
+            .order_by(CustomerContact.is_primary.desc())
+            .all()
+        )
+        contacts = [
+            {"name": c.name, "email": c.email, "is_primary": c.is_primary}
+            for c in rows if c.email
+        ]
+    return {
+        "email_configured": email_configured(),
+        "salesperson_email": sp.email if sp and sp.email else None,
+        "contacts": contacts,
+    }
+
+
+@router.post("/{project_id}/email-quotation")
+def email_quotation(project_id: int, data: EmailQuotationRequest, db: Session = Depends(get_db)):
+    project = _get_or_404(project_id, db)
+    _require_status(project, ("quotation_ready",))
+    if not project.quotation_filename:
+        raise HTTPException(404, "Quotation not generated yet.")
+    path = settings.projects_dir / project.quotation_filename
+    if not path.exists():
+        raise HTTPException(404, "Quotation file missing from disk.")
+    if not data.to:
+        raise HTTPException(400, "At least one recipient is required.")
+
+    to = [str(x) for x in data.to]
+    cc = [str(x) for x in data.cc]
+    subject = data.subject or f"Quotation {project.our_ref} — {project.client_name}"
+    body = data.message or (
+        f"Dear Sir/Madam,\n\nPlease find attached our quotation "
+        f"{project.our_ref} for {project.client_name}.\n\nThank you."
+    )
+
+    try:
+        send_quotation_email(to, cc, subject, body, path)
+    except RuntimeError as e:      # not configured
+        raise HTTPException(400, str(e))
+    except Exception as e:         # SMTP / send failure
+        raise HTTPException(502, f"Failed to send email: {e}")
+
+    # Audit trail on the customer's append-only activity log (Phase 3).
+    if project.customer_id:
+        db.add(CustomerNote(
+            customer_id=project.customer_id,
+            author_id=None,
+            body=f"Quotation {project.our_ref} emailed to {', '.join(to)}",
+        ))
+        db.commit()
+
+    return {"status": "sent", "to": to}
 
 
 # ------------------------------------------------------------------ #

@@ -919,6 +919,37 @@
             Generate Quotation
           </button>
         </div>
+
+        <div id="email-panel" class="card" style="display:none; margin-top:20px; border-color:var(--brand);">
+          <div class="section-label" style="margin-top:0;">Email quotation</div>
+          <div id="email-not-configured" class="alert alert-error" style="display:none; margin-bottom:14px;">
+            Email isn't set up yet — ask your admin to configure SMTP on the server.
+          </div>
+          <div id="email-suggestions" style="margin-bottom:12px;"></div>
+          <div class="form-grid">
+            <div class="form-group" style="grid-column:1 / -1;">
+              <label>To <span class="req">*</span> <span style="color:var(--muted); font-weight:400;">(comma-separated)</span></label>
+              <input id="email-to" placeholder="customer@company.com" />
+            </div>
+            <div class="form-group" style="grid-column:1 / -1;">
+              <label>Cc <span style="color:var(--muted); font-weight:400;">(optional, comma-separated)</span></label>
+              <input id="email-cc" placeholder="colleague@itmikro.com" />
+            </div>
+            <div class="form-group" style="grid-column:1 / -1;">
+              <label>Subject</label>
+              <input id="email-subject" />
+            </div>
+            <div class="form-group" style="grid-column:1 / -1;">
+              <label>Message</label>
+              <textarea id="email-message" rows="4"></textarea>
+            </div>
+          </div>
+          <div id="email-msg" style="font-size:.8rem; margin:10px 0; min-height:1em;"></div>
+          <div style="display:flex; gap:10px;">
+            <button class="btn btn-primary" id="email-send-btn" onclick="sendQuotationEmail()">Send</button>
+            <button class="btn btn-outline" onclick="document.getElementById('email-panel').style.display='none'">Cancel</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1702,13 +1733,84 @@
             &nbsp;·&nbsp; Sub-Total RM ${res.subtotal_myr.toLocaleString()} + 10% SST
           </div>
         </div>
-        <a href="/projects/${currentProjectId}/download/quotation" class="btn btn-success" download>
-          ⬇ Download Quotation Excel
-        </a>`;
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <a href="/projects/${currentProjectId}/download/quotation" class="btn btn-success" download>
+            ⬇ Download Quotation Excel
+          </a>
+          <button class="btn btn-outline" onclick="openEmailPanel()">✉ Email Quotation</button>
+        </div>`;
     } catch(e) {
       alert_('error', e.message);
       btn.disabled = false;
       btn.innerHTML = 'Generate Quotation';
+    }
+  }
+
+  async function openEmailPanel() {
+    const panel = document.getElementById('email-panel');
+    const msgEl = document.getElementById('email-msg');
+    msgEl.textContent = '';
+    document.getElementById('email-not-configured').style.display = 'none';
+    document.getElementById('email-send-btn').disabled = false;
+    panel.style.display = 'block';
+    try {
+      const info = await api('GET', `/projects/${currentProjectId}/email-recipients`);
+      if (!info.email_configured) {
+        document.getElementById('email-not-configured').style.display = 'block';
+        document.getElementById('email-send-btn').disabled = true;
+      }
+      const primary = (info.contacts || []).find(c => c.is_primary) || (info.contacts || [])[0];
+      document.getElementById('email-to').value = primary?.email || info.salesperson_email || '';
+      document.getElementById('email-cc').value = info.salesperson_email && info.salesperson_email !== (primary?.email || '')
+        ? info.salesperson_email : '';
+      document.getElementById('email-subject').value = '';   // server default if blank
+      document.getElementById('email-message').value = '';   // server default if blank
+
+      // One-click chips for other known emails
+      const chipEmails = [];
+      if (info.salesperson_email) chipEmails.push(info.salesperson_email);
+      for (const c of info.contacts || []) if (c.email) chipEmails.push(c.email);
+      const uniq = [...new Set(chipEmails)];
+      document.getElementById('email-suggestions').innerHTML = uniq.length
+        ? 'Add: ' + uniq.map(e =>
+            `<button type="button" class="tag" style="cursor:pointer; border:none;" onclick="addEmailRecipient('${e}')">${e} +</button>`
+          ).join(' ')
+        : '';
+    } catch(e) {
+      document.getElementById('email-msg').style.color = 'var(--red)';
+      document.getElementById('email-msg').textContent = e.message;
+    }
+  }
+
+  function addEmailRecipient(email) {
+    const input = document.getElementById('email-to');
+    const current = input.value.split(',').map(s => s.trim()).filter(Boolean);
+    if (!current.includes(email)) current.push(email);
+    input.value = current.join(', ');
+  }
+
+  async function sendQuotationEmail() {
+    const parse = id => document.getElementById(id).value.split(',').map(s => s.trim()).filter(Boolean);
+    const to = parse('email-to');
+    const cc = parse('email-cc');
+    const subject = document.getElementById('email-subject').value.trim() || null;
+    const message = document.getElementById('email-message').value.trim() || null;
+    const msgEl = document.getElementById('email-msg');
+    msgEl.style.color = 'var(--red)';
+    msgEl.textContent = '';
+    if (!to.length) { msgEl.textContent = 'At least one recipient is required.'; return; }
+    const btn = document.getElementById('email-send-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner"></div> Sending…';
+    try {
+      await api('POST', `/projects/${currentProjectId}/email-quotation`, { to, cc, subject, message });
+      document.getElementById('email-panel').style.display = 'none';
+      alert_('success', 'Quotation emailed.');
+    } catch(e) {
+      msgEl.textContent = e.message;
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = 'Send';
     }
   }
 
