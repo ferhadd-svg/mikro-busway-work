@@ -341,9 +341,9 @@ def generate_quotation(project_id: int, db: Session = Depends(get_db)):
     from app.services.boq_builder import build_boq as _build_boq
     boq = _build_boq(extraction, flags, project.our_ref, project.client_name)
 
-    # Look for a salesperson template
-    template_candidates = list(settings.templates_dir.glob(f"*{salesperson.name.split()[0].upper()}*"))
-    template_path = template_candidates[0] if template_candidates else None
+    # Find the salesperson's quotation template (uploaded copy wins; else the
+    # bundled one shipped with the app so a fresh deploy still has it).
+    template_path = _find_salesperson_template(salesperson.name)
 
     out_path = build_quotation(
         runs=boq.runs,
@@ -530,6 +530,28 @@ def _get_or_404(project_id: int, db: Session) -> Project:
 
 def _project_dir(project_id: int) -> Path:
     return settings.projects_dir / str(project_id)
+
+
+# Templates shipped with the app, so a fresh (wiped-disk) deploy still has the
+# salesperson quotation formats without needing a re-upload.
+BUNDLED_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "bundled_templates"
+
+
+def _find_salesperson_template(salesperson_name: str) -> Path | None:
+    """Return the .xlsx template whose filename contains the salesperson's
+    first name. Matching is case-insensitive (the server is Linux, where glob
+    is case-sensitive). An admin-uploaded template takes precedence over the
+    bundled one."""
+    first = (salesperson_name.split()[0].lower() if salesperson_name else "")
+    if not first:
+        return None
+    for folder in (settings.templates_dir, BUNDLED_TEMPLATES_DIR):
+        if not folder.exists():
+            continue
+        for f in sorted(folder.glob("*.xls*")):
+            if first in f.name.lower():
+                return f
+    return None
 
 
 def _require_status(project: Project, allowed: tuple):
