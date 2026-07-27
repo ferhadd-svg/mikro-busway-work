@@ -8,6 +8,7 @@ Template structure assumptions (Mikro standard):
   - Footer: remarks block + subtotal / SST / grand total + signatures
 """
 
+import math
 import re
 from datetime import date
 from pathlib import Path
@@ -276,9 +277,11 @@ def _fill_terms_and_remarks(ws, runs, flags):
         if "MIKRO BUSWAY SDN BERHAD" in b and sig_row is None:
             sig_row = r
 
-    # Terms — clear the region then rewrite one label/value per row.
+    # Terms — clear the region, then write each value MERGED across C:H with
+    # wrap + a row height sized to the text, so long lines don't clip.
     if manf_row and remarks_row and manf_row < remarks_row:
         for rr in range(manf_row, remarks_row):
+            _unmerge_row(ws, rr)
             ws.cell(row=rr, column=2).value = None
             ws.cell(row=rr, column=3).value = None
         rr = manf_row
@@ -286,23 +289,47 @@ def _fill_terms_and_remarks(ws, runs, flags):
             if rr >= remarks_row:
                 break
             ws.cell(row=rr, column=2, value=label).font = bold
-            c = ws.cell(row=rr, column=3, value=f": {value}")
+            text = f": {value}"
+            c = ws.cell(row=rr, column=3, value=text)
             c.alignment = Alignment(wrap_text=True, vertical="top")
-            if "\n" in value:
-                ws.row_dimensions[rr].height = 15 * (value.count("\n") + 1)
+            ws.merge_cells(start_row=rr, start_column=3, end_row=rr, end_column=8)  # C:H
+            ws.row_dimensions[rr].height = 15 * _wrapped_lines(text, 85)
             rr += 1
 
-    # Remarks — clear the region then rewrite the numbered list.
+    # Remarks — clear the region, then write each remark MERGED across B:H
+    # with wrap + sized height, so nothing spills off the right edge.
     if remarks_row:
         end = sig_row if (sig_row and sig_row > remarks_row) else remarks_row + 14
         for rr in range(remarks_row + 1, end):
+            _unmerge_row(ws, rr)
             ws.cell(row=rr, column=2).value = None
         rr = remarks_row + 1
         for i, text in enumerate(_remarks_for_runs(runs, flags), 1):
             if rr >= end:
                 break
-            ws.cell(row=rr, column=2, value=f"{i}. {text}")
+            line = f"{i}. {text}"
+            c = ws.cell(row=rr, column=2, value=line)
+            c.alignment = Alignment(wrap_text=True, vertical="top")
+            ws.merge_cells(start_row=rr, start_column=2, end_row=rr, end_column=8)  # B:H
+            ws.row_dimensions[rr].height = 15 * _wrapped_lines(line, 100)
             rr += 1
+
+
+def _wrapped_lines(text: str, chars_per_line: int) -> int:
+    """Estimate how many display lines `text` needs at the given width,
+    honouring explicit newlines. Used to size a row so wrapped text isn't
+    clipped."""
+    lines = 0
+    for segment in str(text).split("\n"):
+        lines += max(1, math.ceil(len(segment) / chars_per_line))
+    return lines
+
+
+def _unmerge_row(ws, row: int):
+    """Drop any merged range that starts on this row (so re-writing the
+    terms/remarks region doesn't collide with a stale merge)."""
+    for rng in [str(m) for m in ws.merged_cells.ranges if m.min_row == row]:
+        ws.unmerge_cells(rng)
 
 
 def _shift_images(ws, threshold: int, delta: int):
