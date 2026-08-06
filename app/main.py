@@ -3,6 +3,8 @@ Mikro Busway Quotation Engine — FastAPI backend
 Run with: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 """
 
+import shutil
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -17,22 +19,64 @@ from app.services.price_list import price_list
 from app.routers import salespeople, projects, price_list as price_list_router, auth, customers
 
 
+def _bundled_price_list_source() -> Path | None:
+    """The cold-start default price list to seed when none has been uploaded.
+    Prefers an explicit PRICE_LIST_BUNDLED_FILE (e.g. a Render Secret File),
+    then the newest .xls* committed under app/bundled_price_list/."""
+    override = settings.price_list_bundled_file.strip()
+    if override:
+        p = Path(override)
+        if p.is_file():
+            return p
+        print(f"[startup] PRICE_LIST_BUNDLED_FILE set but not found: {p}")
+    if settings.bundled_price_list_dir.is_dir():
+        candidates = sorted(
+            settings.bundled_price_list_dir.glob("*.xls*"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if candidates:
+            return candidates[0]
+    return None
+
+
+def _load_price_list_on_startup() -> None:
+    """Load the most recently uploaded price list. When none exists (e.g. a
+    fresh deploy on Render's ephemeral disk), fall back to the bundled default
+    so the app always has correct prices — copying it into price_list_dir so it
+    shows up in the price-list info/versions UI like a normal file."""
+    uploaded = sorted(
+        settings.price_list_dir.glob("*.xls*"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if uploaded:
+        price_list.load(uploaded[0])
+        print(f"[startup] Price list loaded: {uploaded[0].name}")
+        return
+
+    bundled = _bundled_price_list_source()
+    if bundled:
+        dest = settings.price_list_dir / f"{time.time_ns()}_{bundled.name}"
+        try:
+            shutil.copy2(bundled, dest)
+            price_list.load(dest)
+        except OSError:
+            # If the copy fails for any reason, still load directly so prices
+            # are available even if the file can't be persisted to the dir.
+            price_list.load(bundled)
+        print(f"[startup] No uploaded price list — loaded bundled default: {bundled.name}")
+        return
+
+    print("[startup] No price list found. Upload one via POST /price-list/upload.")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create all DB tables
     Base.metadata.create_all(bind=engine)
 
-    # Auto-load the most recently modified price list on startup
-    price_list_files = sorted(
-        settings.price_list_dir.glob("*.xls*"),
-        key=lambda p: p.stat().st_mtime,
-        reverse=True,
-    )
-    if price_list_files:
-        price_list.load(price_list_files[0])
-        print(f"[startup] Price list loaded: {price_list_files[0].name}")
-    else:
-        print("[startup] No price list found. Upload one via POST /price-list/upload.")
+    _load_price_list_on_startup()
 
     yield
 

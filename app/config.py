@@ -3,6 +3,7 @@ from pathlib import Path
 import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+_APP_DIR = Path(__file__).resolve().parent
 
 # On Render/Railway the data volume is mounted at /opt/render/project/src/data
 # Fall back to local data/ when running locally
@@ -19,6 +20,16 @@ class Settings(BaseSettings):
     projects_dir: Path = _data_root / "projects"
     templates_dir: Path = _data_root / "templates"
     price_list_dir: Path = _data_root / "price_list"
+
+    # Cold-start default price list. Render's free tier has no persistent disk,
+    # so the uploaded price_list_dir is wiped on every deploy — leaving the app
+    # with no prices until someone re-uploads. To avoid that, a canonical price
+    # list is bundled in the repo (app/bundled_price_list/) and auto-loaded when
+    # price_list_dir is empty. An admin uploading a newer list still overrides
+    # it. Set PRICE_LIST_BUNDLED_FILE to an absolute path (e.g. a Render Secret
+    # File) to source the default from outside the repo without a code change.
+    bundled_price_list_dir: Path = _APP_DIR / "bundled_price_list"
+    price_list_bundled_file: str = ""
 
     # Auth — session cookie is a random token looked up in the DB on every
     # request (see app/services/auth.py), so secret_key does NOT sign or
