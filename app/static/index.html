@@ -1684,14 +1684,27 @@
 
   function showPagePicker(prev) {
     const wrap = document.getElementById('page-thumbs');
-    wrap.innerHTML = (prev.thumbnails || []).map((src, i) => `
-      <label style="cursor:pointer; border:2px solid var(--border); border-radius:8px; padding:6px; text-align:center; width:150px;">
+    const hints = prev.page_hints || [];
+    wrap.innerHTML = (prev.thumbnails || []).map((src, i) => {
+      const hint = hints[i] || 'unknown';
+      const border = hint === 'likely' ? 'var(--brand)' : hint === 'unlikely' ? 'var(--border)' : 'var(--border)';
+      const opacity = hint === 'unlikely' ? '0.55' : '1';
+      const badge = hint === 'likely'
+        ? '<div style="font-size:.65rem; font-weight:700; color:var(--brand); text-transform:uppercase; letter-spacing:.4px; margin-bottom:4px;">Likely SLD</div>'
+        : hint === 'unlikely'
+          ? '<div style="font-size:.65rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:4px;">Notes / Schedule?</div>'
+          : '';
+      return `<label style="cursor:pointer; border:2px solid ${border}; border-radius:8px; padding:6px; text-align:center; width:150px; opacity:${opacity};">
+        ${badge}
         <img src="${src}" style="width:100%; height:auto; display:block; margin-bottom:6px;" />
-        <input type="checkbox" class="page-check" value="${i+1}" onchange="updatePickerHint()" /> Page ${i+1}
-      </label>`).join('');
+        <input type="checkbox" class="page-check" value="${i+1}" data-hint="${hint}" ${hint === 'likely' ? 'checked' : ''} onchange="updatePickerHint()" /> Page ${i+1}
+      </label>`;
+    }).join('');
+    const anyLikely = hints.includes('likely');
     document.getElementById('page-picker-hint').textContent =
-      prev.page_count > (prev.thumbnails||[]).length
-        ? `Showing first ${(prev.thumbnails||[]).length} of ${prev.page_count} pages.` : '';
+      (prev.page_count > (prev.thumbnails||[]).length
+        ? `Showing first ${(prev.thumbnails||[]).length} of ${prev.page_count} pages. ` : '') +
+      (anyLikely ? 'Likely SLD page(s) pre-selected — adjust if needed.' : '');
     document.getElementById('page-picker').style.display = 'block';
     updatePickerHint();
   }

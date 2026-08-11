@@ -110,6 +110,46 @@ MAX_PDF_PAGES = 4
 # Cap how many page thumbnails the picker renders (bounds a huge tender set).
 MAX_THUMBNAIL_PAGES = 40
 
+# Page-picker relevance hints: a lightweight text scan (not a hard filter —
+# the reader's own Rule 0 already copes with a wrong page being selected) to
+# save a salesperson from scrolling through a 50-page tender set by eye.
+# Real drawing sets are inconsistent about which pages carry extractable
+# text at all (some are vector-only CAD exports with none), so this only
+# ever narrows the picker's default selection / visual emphasis — it never
+# removes a page from the list, and "no text found" is treated as neutral
+# ("unknown"), not as evidence against the page.
+_SLD_STRONG_SIGNALS = ("SINGLE LINE DIAGRAM", "SINGLE-LINE DIAGRAM", "BUSDUCT", "BUSWAY", "BUS TRUNKING", "BUSBAR TRUNKING")
+_SLD_WEAK_SIGNALS = ("SCHEMATIC", "MSB", "EMSB", "RISER", "MAIN SWITCHBOARD", "TRANSFORMER")
+_NON_SLD_STRONG_SIGNALS = ("SCHEDULE OF RATES", "SCHEDULE OF UNIT RATES", "BILL OF QUANTIT", "GENERAL NOTES", "LOAD SCHEDULE", "LEGEND")
+_NON_SLD_WEAK_SIGNALS = ("FLOOR PLAN", "ELEVATION", "SPECIFICATION", "LIGHTING LAYOUT", "SOCKET OUTLET")
+
+
+def _score_page_relevance(text: str) -> str:
+    """Classify one page's extracted text as "likely" / "unlikely" / "unknown"
+    to hold the busduct SLD. Cheap keyword heuristic, not a hard filter.
+
+    A strong positive signal (an actual "SINGLE LINE DIAGRAM"/"BUSDUCT" title
+    or label) wins outright rather than being netted against strong negative
+    signals — real title-block templates often carry a standing "GENERAL
+    NOTES" field as boilerplate on every sheet, including genuine SLD pages,
+    so summing scores let that cancel out a real SLD title (confirmed on a
+    real project drawing: "SINGLE LINE DIAGRAM ELECTRICAL ... GENERAL NOTES"
+    summed to zero and was wrongly left as "unknown")."""
+    if not text or not text.strip():
+        return "unknown"
+    upper = text.upper()
+    if any(kw in upper for kw in _SLD_STRONG_SIGNALS):
+        return "likely"
+    if any(kw in upper for kw in _NON_SLD_STRONG_SIGNALS):
+        return "unlikely"
+    score = sum(1 for kw in _SLD_WEAK_SIGNALS if kw in upper)
+    score -= sum(1 for kw in _NON_SLD_WEAK_SIGNALS if kw in upper)
+    if score >= 2:
+        return "likely"
+    if score <= -2:
+        return "unlikely"
+    return "unknown"
+
 
 def _pdf_to_images(
     pdf_path: Path,
@@ -146,13 +186,16 @@ def _pdf_to_images(
     return paths, total_pages
 
 
-def pdf_page_thumbnails(pdf_path: Path, long_edge: int = 340) -> tuple[int, list[str]]:
-    """Return (total_page_count, [data-URL thumbnail per page]) for the page
-    picker. Only the first MAX_THUMBNAIL_PAGES are thumbnailed."""
+def pdf_page_thumbnails(pdf_path: Path, long_edge: int = 340) -> tuple[int, list[str], list[str]]:
+    """Return (total_page_count, [data-URL thumbnail per page], [relevance
+    hint per page]) for the page picker. Only the first MAX_THUMBNAIL_PAGES
+    are thumbnailed/scored; hint is "likely" | "unlikely" | "unknown" (see
+    _score_page_relevance) — a nudge for default selection, never a filter."""
     doc = fitz.open(str(pdf_path))
     try:
         total_pages = doc.page_count
         thumbs: list[str] = []
+        hints: list[str] = []
         for i in range(min(total_pages, MAX_THUMBNAIL_PAGES)):
             page = doc.load_page(i)
             r = page.rect
@@ -160,9 +203,10 @@ def pdf_page_thumbnails(pdf_path: Path, long_edge: int = 340) -> tuple[int, list
             pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
             b64 = base64.standard_b64encode(pix.tobytes("png")).decode()
             thumbs.append(f"data:image/png;base64,{b64}")
+            hints.append(_score_page_relevance(page.get_text()))
     finally:
         doc.close()
-    return total_pages, thumbs
+    return total_pages, thumbs, hints
 
 
 def _ensure_supported_image(image_path: Path) -> Path:
