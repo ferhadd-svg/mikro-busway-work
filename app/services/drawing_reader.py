@@ -70,7 +70,10 @@ CRITICAL RULES — read every one before responding:
    - Earth: shown "50%E"/"+50%E" → 50%E; "100%E"/"+100% EARTH"/"100% ELECTRICAL" → 100%E. "1/2 earth" = 50%E. "100% neutral + integral earth" → still 4W+50%E. "+E" / "+ E" / "c/w integral earth" means earth is integral (a feeder always has it) — NOT a 100% earth; still default 50%E unless a % is given. Not shown → default 50%E and flag.
    - Phases: "3P4W" or "TPN" or "4P"/"4 POLE" all mean 4-wire → phases "3P4W". "3P5W"/"5W" → phases "3P5W" and flag "3P5W — price on 5W feeder column".
 
-7. PIU (plug-in units on a riser) — list each plug-in/tap-off MCCB rating shown along the run (e.g. 100A, 250A, 400A TPN). If the kA interrupting rating isn't shown, flag it (default 26kA).
+7. PIU (plug-in units on a riser) — list each plug-in/tap-off MCCB rating shown along the run (e.g. 100A, 250A, 400A TPN).
+   - Some risers (especially multi-storey residential/tenant buildings) show only a tap symbol or metering-panel box (e.g. "M1", "MP-8", "DB-TU") at each level on the main riser sheet, with no ampere rating printed there. Before flagging it as unlabelled, check whether any other page supplied is a "TYPICAL METERING PANEL" / "TYPICAL TAP-OFF UNIT" detail sheet — it usually states one uniform MCCB rating (e.g. "60A TPN MCCB") that applies to every tap of that type on the riser. If found, apply that rating to every matching tap instead of leaving it blank.
+   - If no ampere rating is found on the riser or on any typical/detail sheet supplied, do not guess — record it as unrated and flag "PIU rating not labelled anywhere in the supplied pages — confirm before pricing."
+   - If the kA interrupting rating isn't shown, flag it (default 26kA).
 
 8. LENGTHS — an SLD does NOT show physical run length. Set length_m to null and flag "length not on SLD — needs layout/section or user estimate" unless a length is explicitly dimensioned.
 

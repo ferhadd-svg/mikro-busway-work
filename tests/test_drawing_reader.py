@@ -1,5 +1,5 @@
 from app.schemas.boq import BusRun
-from app.services.drawing_reader import _normalise_run, _parse_json_response
+from app.services.drawing_reader import SYSTEM_PROMPT, _normalise_run, _parse_json_response
 
 
 # ------------------------------------------------------------------ #
@@ -109,3 +109,17 @@ def test_explicit_nulls_dropped_for_defaulted_fields():
 def test_needs_bimetal_defaults_from_material():
     assert _normalise_run(_minimal_run(material="AL"), 1)["needs_bimetal"] is True
     assert _normalise_run(_minimal_run(material="CU"), 1)["needs_bimetal"] is False
+
+
+# ------------------------------------------------------------------ #
+#  SYSTEM_PROMPT guidance                                              #
+# ------------------------------------------------------------------ #
+
+def test_prompt_covers_offsheet_piu_ratings():
+    """Real project evidence (a 537-unit residential tower): the main riser
+    sheet shows only a tap symbol (M1/M2/M3) per level with no ampere rating
+    — the actual MCCB rating (e.g. 60A TPN) is only on a separate "typical
+    metering panel" detail sheet elsewhere in the set. The model must be told
+    to check other supplied pages before flagging a tap as unrated."""
+    assert "TYPICAL METERING PANEL" in SYSTEM_PROMPT
+    assert "PIU rating not labelled anywhere in the supplied pages" in SYSTEM_PROMPT
