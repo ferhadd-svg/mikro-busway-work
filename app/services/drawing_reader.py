@@ -40,9 +40,9 @@ CRITICAL RULES — read every one before responding:
    If the sheet shown is not a single-line schematic, return "runs": [] and add a global_flag naming what it is, e.g. "This sheet is a <floor plan / elevation / rate schedule>, not an SLD — no busduct runs extracted (check the other pages for the single-line diagram)." Do NOT invent runs.
 
 1. QUOTE BUSDUCT ONLY — NOT CABLE. This is the most important rule.
-   - A run is BUSDUCT (busway) only if its label says so, e.g. "1250A TPN ALU. BUSDUCT", "600A TPN 3 PHASE ALU. BUSDUCT", "2000A TPN CU BUSDUCT", "BUSWAY", "BUS TRUNKING". The word may sit on its own line with the ampere value just above or below it (e.g. "BUSDUCT" with "1,000 A" underneath) — read them together. Quote these.
+   - A run is BUSDUCT (busway) only if its label says so, e.g. "1250A TPN ALU. BUSDUCT", "600A TPN 3 PHASE ALU. BUSDUCT", "2000A TPN CU BUSDUCT", "BUSWAY", "BUS TRUNKING", "BUSBAR TRUNKING" (e.g. "2500A TPN ALUMINIUM BUSBAR TRUNKING C/W INTEGRAL EARTH & FLEXIBLE CONNECTION" — this IS busduct, same product as "bus trunking", despite sharing the word "busbar" with the excluded case below). The word may sit on its own line with the ampere value just above or below it (e.g. "BUSDUCT" with "1,000 A" underneath) — read them together. Quote these.
    - A run is CABLE if labelled like "6 NOS 4 x 400mm² 1C XLPE/PVC ALU. CABLE", "4 x 240mm.sq ... CABLE", "NYY 4 x ...", "... IN TRUNKING/ON CABLE TRAY". Cables also feed DBs, SSBs, machines, pumps, EV chargers, lifts. DO NOT quote cable — ignore it completely.
-   - The BUSBARS INSIDE a switchboard are NOT busduct — e.g. "400V 2000A TPN ... SLEEVED TINNED COPPER BUSBARS", "busbar chamber". Only quote busduct that RUNS BETWEEN boards/levels (labelled "... BUSDUCT"/"BUSWAY"), never a board's internal busbar.
+   - The BUSBARS INSIDE a switchboard are NOT busduct — e.g. "400V 2000A TPN ... SLEEVED TINNED COPPER BUSBARS", "busbar chamber". Only quote busduct that RUNS BETWEEN boards/levels (labelled "... BUSDUCT"/"BUSWAY"/"...BUSBAR TRUNKING"), never a board's internal busbar. The distinguishing word is "TRUNKING" or "CHAMBER"/no-extra-word: a bare "BUSBAR"/"busbar chamber" inside one board is excluded; "BUSBAR TRUNKING" running between boards/levels is busduct.
    - Read the label on EACH connection to decide. Never assume by position.
 
 2. TX→MSB CAN BE EITHER BUSDUCT OR CABLE — you must check.
@@ -63,6 +63,7 @@ CRITICAL RULES — read every one before responding:
    - Starts at a cable feed-in / joint box / termination box → type "RISER", routing "FROM LEVEL x TO LEVEL y".
    - A building often has SEVERAL separate riser busducts — by code (R-A/CB-R, R-B/CB-R) or by supply function ("NORMAL SUPPLY BUSDUCT RISER", "ESSENTIAL SUPPLY BUSDUCT RISER", EMSB emergency riser) — each running up its own levels. Extract EACH as its own run, named as labelled. Do not merge them.
    - Use the actual board/level/riser names printed on the drawing (MSB-T1, EMSB, R-A/CB-R, NORMAL/ESSENTIAL SUPPLY RISER, SSB/L12, LEVEL 7, ROOF, etc.).
+   - RETROFIT/EXTENSION JOBS: a riser may be split by a dashed line or similar marker into "EXISTING BUSDUCT (up to Level n)" — already installed, NOT part of this job — and "NEW BUSDUCT (by this contractor)" / "(this contract)" — the actual scope to quote. Only extract the NEW portion; set its routing to the real level range being added (e.g. "FROM LEVEL 7 TO LEVEL 33", not the whole building), and add a flag noting the split, e.g. "Existing busduct up to Level 7 excluded — only the new/this-contract portion above it is quoted." Never quote the existing portion, and never quote the whole riser as if all of it were new.
 
 5. MATERIAL — read "ALU/AL" or "CU/COPPER" from the busduct label. If absent, default AL and flag.
 

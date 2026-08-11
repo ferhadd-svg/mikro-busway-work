@@ -123,3 +123,24 @@ def test_prompt_covers_offsheet_piu_ratings():
     to check other supplied pages before flagging a tap as unrated."""
     assert "TYPICAL METERING PANEL" in SYSTEM_PROMPT
     assert "PIU rating not labelled anywhere in the supplied pages" in SYSTEM_PROMPT
+
+
+def test_prompt_covers_existing_vs_new_busduct_scope():
+    """Real project evidence (a retrofit/extension job, "Twin Pavilion Blok
+    F"): the riser is split by a dashed marker into "EXISTING BUSDUCT (up to
+    Level 7)" — already installed, not this job's scope — and "NEW BUSDUCT
+    (by this contractor)". Quoting the whole riser as new would double the
+    price or claim work that's already done; the model must be told to
+    extract only the new portion's actual level range."""
+    assert "EXISTING BUSDUCT" in SYSTEM_PROMPT
+    assert "RETROFIT/EXTENSION" in SYSTEM_PROMPT
+
+
+def test_prompt_covers_busbar_trunking_synonym():
+    """Real project evidence ("PRISMA MELODY" service apartments): the
+    TX-to-meter-kiosk busduct feed is labelled "BUSBAR TRUNKING", not
+    "BUSDUCT" or "BUS TRUNKING". Because the prompt's own warning about
+    excluding a switchboard's internal busbar uses the word "BUSBAR", the
+    model needs an explicit note that "BUSBAR TRUNKING" is busduct, not the
+    excluded case, to avoid a false-negative on this label."""
+    assert "BUSBAR TRUNKING" in SYSTEM_PROMPT
