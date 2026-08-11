@@ -389,13 +389,39 @@
     tr:last-child td { border-bottom: none; }
     tbody tr:hover td { background: var(--grey-bg); }
 
-    /* Fixed column widths (see <colgroup>) so long content — e.g. a run
-       with 6+ PIU ratings, or a long routing description — wraps within
-       its own cell instead of forcing the whole table wider. */
-    .runs-extract-table { table-layout: fixed; }
-    .runs-extract-table td, .runs-extract-table th {
-      white-space: normal;
-      overflow-wrap: break-word;
+    /* ── Runs list (Step 3) ───────────────────────────────────
+       Routing-first: the collapsed row shows only the run id and its
+       routing. Everything needed for pricing (type, rating, material,
+       length, PIU) lives inside the Edit expansion, not in a wide table. */
+    .runs-list { display: flex; flex-direction: column; gap: 8px; }
+    .run-row {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 16px;
+      background: #fff;
+    }
+    .run-row.editing { border-color: var(--brand); }
+    .run-row-main { display: flex; align-items: center; gap: 12px; }
+    .run-row-id { font-weight: 700; font-size: .85rem; flex-shrink: 0; }
+    .run-row-routing { color: var(--text); font-size: .85rem; flex: 1; overflow-wrap: break-word; }
+    .run-edit-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 14px;
+      margin: 14px 0;
+    }
+    .run-edit-grid .full { grid-column: 1 / -1; }
+    .run-edit-grid label {
+      display: block;
+      font-size: .72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+    @media (max-width: 640px) {
+      .run-edit-grid { grid-template-columns: 1fr 1fr; }
     }
 
     /* ── Tags ─────────────────────────────────────────────── */
@@ -905,22 +931,7 @@
         <div class="flag-list" id="flag-list"></div>
 
         <div class="section-label" style="margin-top:24px;">Runs extracted</div>
-        <div class="table-wrap">
-          <table class="runs-extract-table">
-            <colgroup>
-              <col style="width:6%"><col style="width:68px"><col style="width:9%">
-              <col style="width:19%"><col style="width:15%"><col style="width:12%">
-              <col style="width:8%"><col style="width:15%"><col style="width:68px">
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Run</th><th>Confidence</th><th>Type</th><th>Routing</th><th>Rating</th>
-                <th>Material</th><th>Length</th><th>PIU ratings</th><th></th>
-              </tr>
-            </thead>
-            <tbody id="runs-table"></tbody>
-          </table>
-        </div>
+        <div class="runs-list" id="runs-table"></div>
 
         <div style="margin-top:28px; display:flex; gap:10px;">
           <button class="btn btn-outline" onclick="goToStep(2)">← Back</button>
@@ -1737,9 +1748,9 @@
   }
 
   function renderRunsTable() {
-    const tbody = document.getElementById('runs-table');
+    const container = document.getElementById('runs-table');
     const runs = extractionData?.extraction?.runs || [];
-    tbody.innerHTML = runs.map(r => {
+    container.innerHTML = runs.map(r => {
       const n = (r.flags||[]).length;
       const confCls = n===0 ? 'tag-conf-high' : n<=2 ? 'tag-conf-med' : 'tag-conf-low';
       const confLabel = n===0 ? 'High' : n<=2 ? 'Medium' : 'Low';
@@ -1748,49 +1759,62 @@
       const hasLength = eff.length_m !== null && eff.length_m !== undefined;
 
       if (editingRuns.has(r.run_id)) {
-        return `<tr class="editing">
-          <td><strong>${r.run_id}</strong></td>
-          <td><span class="tag ${confCls}" title="${n} flag(s) on this run">${confLabel}</span></td>
-          <td>
-            <select class="run-edit-select" data-run="${r.run_id}" data-field="run_type" onchange="onRunFieldChange(this)">
-              ${['TX-MSB','MSB-Riser','RISER'].map(t => `<option value="${t}" ${t===eff.run_type?'selected':''}>${t}</option>`).join('')}
-            </select>
-          </td>
-          <td><input class="run-edit-input" type="text" data-run="${r.run_id}" data-field="routing" value="${eff.routing}" onchange="onRunFieldChange(this)" /></td>
-          <td>
-            <input class="run-edit-input" type="number" data-run="${r.run_id}" data-field="rating_a" value="${eff.rating_a}" onchange="onRunFieldChange(this)" />
-            <div style="color:var(--muted); font-size:.72rem; margin-top:3px;">${r.frame_rating_a}A frame (auto)</div>
-          </td>
-          <td><div style="display:flex; gap:6px;">
-            <select class="run-edit-select" data-run="${r.run_id}" data-field="material" onchange="onRunFieldChange(this)">
-              ${['AL','CU'].map(m => `<option value="${m}" ${m===eff.material?'selected':''}>${m}</option>`).join('')}
-            </select>
-            <select class="run-edit-select" data-run="${r.run_id}" data-field="earth_pct" onchange="onRunFieldChange(this)">
-              ${[50,100].map(e => `<option value="${e}" ${e===eff.earth_pct?'selected':''}>${e}%</option>`).join('')}
-            </select>
-          </div></td>
-          <td><input class="run-edit-input" type="number" step="0.1" min="0" data-run="${r.run_id}" data-field="length_m"
-                value="${hasLength ? eff.length_m : ''}" placeholder="metres" onchange="onRunFieldChange(this)" /></td>
-          <td><input class="run-edit-input" type="text" data-run="${r.run_id}" data-field="piu_ratings" value="${piuStr}" placeholder="e.g. 26, 63" onchange="onRunFieldChange(this)" /></td>
-          <td><button class="btn btn-outline btn-sm" onclick="toggleRunEdit('${r.run_id}')">Done</button></td>
-        </tr>`;
+        return `<div class="run-row editing" data-run="${r.run_id}">
+          <div class="run-row-main">
+            <span class="run-row-id">${r.run_id}</span>
+            <span class="tag ${confCls}" title="${n} flag(s) on this run">${confLabel}</span>
+          </div>
+          <div class="run-edit-grid">
+            <div class="full">
+              <label>Routing</label>
+              <input class="run-edit-input" type="text" data-run="${r.run_id}" data-field="routing" value="${eff.routing}" onchange="onRunFieldChange(this)" />
+            </div>
+            <div>
+              <label>Type</label>
+              <select class="run-edit-select" data-run="${r.run_id}" data-field="run_type" onchange="onRunFieldChange(this)">
+                ${['TX-MSB','MSB-Riser','RISER'].map(t => `<option value="${t}" ${t===eff.run_type?'selected':''}>${t}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label>Rating (A)</label>
+              <input class="run-edit-input" type="number" data-run="${r.run_id}" data-field="rating_a" value="${eff.rating_a}" onchange="onRunFieldChange(this)" />
+              <div style="color:var(--muted); font-size:.72rem; margin-top:4px;">${r.frame_rating_a}A frame (auto)</div>
+            </div>
+            <div>
+              <label>Material</label>
+              <select class="run-edit-select" data-run="${r.run_id}" data-field="material" onchange="onRunFieldChange(this)">
+                ${['AL','CU'].map(m => `<option value="${m}" ${m===eff.material?'selected':''}>${m}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label>Earth %</label>
+              <select class="run-edit-select" data-run="${r.run_id}" data-field="earth_pct" onchange="onRunFieldChange(this)">
+                ${[50,100].map(e => `<option value="${e}" ${e===eff.earth_pct?'selected':''}>${e}%</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label>Length (m)</label>
+              <input class="run-edit-input" type="number" step="0.1" min="0" data-run="${r.run_id}" data-field="length_m"
+                    value="${hasLength ? eff.length_m : ''}" placeholder="metres" onchange="onRunFieldChange(this)" />
+            </div>
+            <div class="full">
+              <label>PIU ratings</label>
+              <input class="run-edit-input" type="text" data-run="${r.run_id}" data-field="piu_ratings" value="${piuStr}" placeholder="e.g. 26, 63" onchange="onRunFieldChange(this)" />
+            </div>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="toggleRunEdit('${r.run_id}')">Done</button>
+        </div>`;
       }
 
-      const lengthDisplay = hasLength
-        ? `${eff.length_m} m`
-        : '<span class="tag tag-conf-low">missing</span>';
+      const lengthWarning = hasLength ? '' : ' <span class="tag tag-conf-low">length needed</span>';
 
-      return `<tr>
-        <td><strong>${r.run_id}</strong></td>
-        <td><span class="tag ${confCls}" title="${n} flag(s) on this run">${confLabel}</span></td>
-        <td>${eff.run_type}</td>
-        <td>${eff.routing}</td>
-        <td>${eff.rating_a}A <span style="color:var(--muted); font-size:.75rem;">(${r.frame_rating_a}A frame)</span></td>
-        <td>${eff.material} · ${eff.earth_pct}%E</td>
-        <td>${lengthDisplay}</td>
-        <td>${piuStr || '—'}</td>
-        <td><button class="btn btn-outline btn-sm" onclick="toggleRunEdit('${r.run_id}')">Edit</button></td>
-      </tr>`;
+      return `<div class="run-row" data-run="${r.run_id}">
+        <div class="run-row-main">
+          <span class="run-row-id">${r.run_id}</span>
+          <span class="run-row-routing">${eff.routing}${lengthWarning}</span>
+          <button class="btn btn-outline btn-sm" onclick="toggleRunEdit('${r.run_id}')">Edit</button>
+        </div>
+      </div>`;
     }).join('');
   }
 
