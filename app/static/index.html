@@ -353,21 +353,22 @@
     #file-input { display: none; }
 
     /* ── Flags ─────────────────────────────────────────────── */
-    .flag-list { display: flex; flex-direction: column; gap: 10px; }
+    .flag-list { display: flex; flex-direction: column; gap: 6px; }
     .flag-item {
-      background: var(--orange-light);
-      border: 1px solid #ffd4a8;
-      border-radius: 10px;
-      padding: 12px 16px;
-      font-size: .84rem;
+      background: var(--grey-bg);
+      border: none;
+      border-left: 3px solid var(--orange);
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-size: .82rem;
     }
     .flag-scope {
-      font-size: .7rem;
-      font-weight: 700;
-      letter-spacing: .8px;
+      font-size: .66rem;
+      font-weight: 600;
+      letter-spacing: .5px;
       text-transform: uppercase;
-      color: var(--orange);
-      margin-bottom: 3px;
+      color: var(--muted);
+      margin-bottom: 2px;
     }
 
     /* ── Tables ─────────────────────────────────────────────── */
@@ -900,7 +901,7 @@
             <thead>
               <tr>
                 <th>Run</th><th>Confidence</th><th>Type</th><th>Routing</th><th>Rating</th>
-                <th>Frame</th><th>Mat.</th><th>Earth%</th><th>Length</th><th>PIU ratings</th>
+                <th>Material</th><th>Length</th><th>PIU ratings</th><th></th>
               </tr>
             </thead>
             <tbody id="runs-table"></tbody>
@@ -1259,6 +1260,7 @@
   let extractionData = null;
   let currentUser = null;
   let runOverrides = {};
+  let editingRuns = new Set();
 
   window.addEventListener('DOMContentLoaded', async () => {
     await checkAuth();
@@ -1712,38 +1714,76 @@
       : '<div style="color:var(--green); font-size:.85rem; font-weight:600;">✓ No flags — drawing read cleanly.</div>';
 
     runOverrides = {};
+    editingRuns = new Set();
+    renderRunsTable();
+  }
+
+  function effectiveRun(r) {
+    return { ...r, ...(runOverrides[r.run_id] || {}) };
+  }
+
+  function renderRunsTable() {
     const tbody = document.getElementById('runs-table');
-    tbody.innerHTML = (extraction.runs||[]).map(r => {
+    const runs = extractionData?.extraction?.runs || [];
+    tbody.innerHTML = runs.map(r => {
       const n = (r.flags||[]).length;
       const confCls = n===0 ? 'tag-conf-high' : n<=2 ? 'tag-conf-med' : 'tag-conf-low';
       const confLabel = n===0 ? 'High' : n<=2 ? 'Medium' : 'Low';
-      const piuStr = (r.piu_ratings||[]).join(', ');
+      const eff = effectiveRun(r);
+      const piuStr = (eff.piu_ratings||[]).join(', ');
+      const hasLength = eff.length_m !== null && eff.length_m !== undefined;
+
+      if (editingRuns.has(r.run_id)) {
+        return `<tr class="editing">
+          <td><strong>${r.run_id}</strong></td>
+          <td><span class="tag ${confCls}" title="${n} flag(s) on this run">${confLabel}</span></td>
+          <td>
+            <select class="run-edit-select" data-run="${r.run_id}" data-field="run_type" onchange="onRunFieldChange(this)">
+              ${['TX-MSB','MSB-Riser','RISER'].map(t => `<option value="${t}" ${t===eff.run_type?'selected':''}>${t}</option>`).join('')}
+            </select>
+          </td>
+          <td><input class="run-edit-input" type="text" data-run="${r.run_id}" data-field="routing" value="${eff.routing}" onchange="onRunFieldChange(this)" /></td>
+          <td>
+            <input class="run-edit-input" type="number" data-run="${r.run_id}" data-field="rating_a" value="${eff.rating_a}" onchange="onRunFieldChange(this)" />
+            <div style="color:var(--muted); font-size:.72rem; margin-top:3px;">${r.frame_rating_a}A frame (auto)</div>
+          </td>
+          <td><div style="display:flex; gap:6px;">
+            <select class="run-edit-select" data-run="${r.run_id}" data-field="material" onchange="onRunFieldChange(this)">
+              ${['AL','CU'].map(m => `<option value="${m}" ${m===eff.material?'selected':''}>${m}</option>`).join('')}
+            </select>
+            <select class="run-edit-select" data-run="${r.run_id}" data-field="earth_pct" onchange="onRunFieldChange(this)">
+              ${[50,100].map(e => `<option value="${e}" ${e===eff.earth_pct?'selected':''}>${e}%</option>`).join('')}
+            </select>
+          </div></td>
+          <td><input class="run-edit-input" type="number" step="0.1" min="0" data-run="${r.run_id}" data-field="length_m"
+                value="${hasLength ? eff.length_m : ''}" placeholder="metres" onchange="onRunFieldChange(this)" /></td>
+          <td><input class="run-edit-input" type="text" data-run="${r.run_id}" data-field="piu_ratings" value="${piuStr}" placeholder="e.g. 26, 63" onchange="onRunFieldChange(this)" /></td>
+          <td><button class="btn btn-outline btn-sm" onclick="toggleRunEdit('${r.run_id}')">Done</button></td>
+        </tr>`;
+      }
+
+      const lengthDisplay = hasLength
+        ? `${eff.length_m} m`
+        : '<span class="tag tag-conf-low">missing</span>';
+
       return `<tr>
         <td><strong>${r.run_id}</strong></td>
         <td><span class="tag ${confCls}" title="${n} flag(s) on this run">${confLabel}</span></td>
-        <td>
-          <select class="run-edit-select" data-run="${r.run_id}" data-field="run_type" onchange="onRunFieldChange(this)">
-            ${['TX-MSB','MSB-Riser','RISER'].map(t => `<option value="${t}" ${t===r.run_type?'selected':''}>${t}</option>`).join('')}
-          </select>
-        </td>
-        <td><input class="run-edit-input" type="text" data-run="${r.run_id}" data-field="routing" value="${r.routing}" onchange="onRunFieldChange(this)" /></td>
-        <td><input class="run-edit-input" type="number" data-run="${r.run_id}" data-field="rating_a" value="${r.rating_a}" onchange="onRunFieldChange(this)" /></td>
-        <td>${r.frame_rating_a}A <span style="color:var(--muted); font-size:.75rem;">(auto)</span></td>
-        <td>
-          <select class="run-edit-select" data-run="${r.run_id}" data-field="material" onchange="onRunFieldChange(this)">
-            ${['AL','CU'].map(m => `<option value="${m}" ${m===r.material?'selected':''}>${m}</option>`).join('')}
-          </select>
-        </td>
-        <td>
-          <select class="run-edit-select" data-run="${r.run_id}" data-field="earth_pct" onchange="onRunFieldChange(this)">
-            ${[50,100].map(e => `<option value="${e}" ${e===r.earth_pct?'selected':''}>${e}%</option>`).join('')}
-          </select>
-        </td>
-        <td><input class="run-edit-input" type="number" step="0.1" min="0" data-run="${r.run_id}" data-field="length_m"
-              value="${r.length_m!==null ? r.length_m : ''}" placeholder="metres" onchange="onRunFieldChange(this)" /></td>
-        <td><input class="run-edit-input" type="text" data-run="${r.run_id}" data-field="piu_ratings" value="${piuStr}" placeholder="e.g. 26, 63" onchange="onRunFieldChange(this)" /></td>
+        <td>${eff.run_type}</td>
+        <td>${eff.routing}</td>
+        <td>${eff.rating_a}A <span style="color:var(--muted); font-size:.75rem;">(${r.frame_rating_a}A frame)</span></td>
+        <td>${eff.material} · ${eff.earth_pct}%E</td>
+        <td>${lengthDisplay}</td>
+        <td>${piuStr || '—'}</td>
+        <td><button class="btn btn-outline btn-sm" onclick="toggleRunEdit('${r.run_id}')">Edit</button></td>
       </tr>`;
     }).join('');
+  }
+
+  function toggleRunEdit(runId) {
+    if (editingRuns.has(runId)) editingRuns.delete(runId);
+    else editingRuns.add(runId);
+    renderRunsTable();
   }
 
   function onRunFieldChange(el) {
