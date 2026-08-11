@@ -389,6 +389,15 @@
     tr:last-child td { border-bottom: none; }
     tbody tr:hover td { background: var(--grey-bg); }
 
+    /* Fixed column widths (see <colgroup>) so long content — e.g. a run
+       with 6+ PIU ratings, or a long routing description — wraps within
+       its own cell instead of forcing the whole table wider. */
+    .runs-extract-table { table-layout: fixed; }
+    .runs-extract-table td, .runs-extract-table th {
+      white-space: normal;
+      overflow-wrap: break-word;
+    }
+
     /* ── Tags ─────────────────────────────────────────────── */
     .tag {
       display: inline-flex;
@@ -897,7 +906,12 @@
 
         <div class="section-label" style="margin-top:24px;">Runs extracted</div>
         <div class="table-wrap">
-          <table>
+          <table class="runs-extract-table">
+            <colgroup>
+              <col style="width:6%"><col style="width:68px"><col style="width:9%">
+              <col style="width:19%"><col style="width:15%"><col style="width:12%">
+              <col style="width:8%"><col style="width:15%"><col style="width:68px">
+            </colgroup>
             <thead>
               <tr>
                 <th>Run</th><th>Confidence</th><th>Type</th><th>Routing</th><th>Rating</th>
