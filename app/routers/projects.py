@@ -162,14 +162,15 @@ async def preview_drawing(project_id: int, file: UploadFile = File(...), db: Ses
     drawing_path = await _save_uploaded_drawing(project, file)
     db.commit()
     if drawing_path.suffix.lower() == ".pdf":
-        page_count, thumbnails = pdf_page_thumbnails(drawing_path)
+        page_count, thumbnails, page_hints = pdf_page_thumbnails(drawing_path)
     else:
-        page_count, thumbnails = 1, []
+        page_count, thumbnails, page_hints = 1, [], []
     return {
         "project_id": project_id,
         "filename": project.drawing_filename,
         "page_count": page_count,
         "thumbnails": thumbnails,   # data URLs, empty for single images
+        "page_hints": page_hints,   # "likely" | "unlikely" | "unknown" per thumbnail — a nudge, not a filter
     }
 
 
