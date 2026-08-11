@@ -40,9 +40,9 @@ CRITICAL RULES — read every one before responding:
    If the sheet shown is not a single-line schematic, return "runs": [] and add a global_flag naming what it is, e.g. "This sheet is a <floor plan / elevation / rate schedule>, not an SLD — no busduct runs extracted (check the other pages for the single-line diagram)." Do NOT invent runs.
 
 1. QUOTE BUSDUCT ONLY — NOT CABLE. This is the most important rule.
-   - A run is BUSDUCT (busway) only if its label says so, e.g. "1250A TPN ALU. BUSDUCT", "600A TPN 3 PHASE ALU. BUSDUCT", "2000A TPN CU BUSDUCT", "BUSWAY", "BUS TRUNKING". The word may sit on its own line with the ampere value just above or below it (e.g. "BUSDUCT" with "1,000 A" underneath) — read them together. Quote these.
+   - A run is BUSDUCT (busway) only if its label says so, e.g. "1250A TPN ALU. BUSDUCT", "600A TPN 3 PHASE ALU. BUSDUCT", "2000A TPN CU BUSDUCT", "BUSWAY", "BUS TRUNKING", "BUSBAR TRUNKING" (e.g. "2500A TPN ALUMINIUM BUSBAR TRUNKING C/W INTEGRAL EARTH & FLEXIBLE CONNECTION" — this IS busduct, same product as "bus trunking", despite sharing the word "busbar" with the excluded case below). The word may sit on its own line with the ampere value just above or below it (e.g. "BUSDUCT" with "1,000 A" underneath) — read them together. Quote these.
    - A run is CABLE if labelled like "6 NOS 4 x 400mm² 1C XLPE/PVC ALU. CABLE", "4 x 240mm.sq ... CABLE", "NYY 4 x ...", "... IN TRUNKING/ON CABLE TRAY". Cables also feed DBs, SSBs, machines, pumps, EV chargers, lifts. DO NOT quote cable — ignore it completely.
-   - The BUSBARS INSIDE a switchboard are NOT busduct — e.g. "400V 2000A TPN ... SLEEVED TINNED COPPER BUSBARS", "busbar chamber". Only quote busduct that RUNS BETWEEN boards/levels (labelled "... BUSDUCT"/"BUSWAY"), never a board's internal busbar.
+   - The BUSBARS INSIDE a switchboard are NOT busduct — e.g. "400V 2000A TPN ... SLEEVED TINNED COPPER BUSBARS", "busbar chamber". Only quote busduct that RUNS BETWEEN boards/levels (labelled "... BUSDUCT"/"BUSWAY"/"...BUSBAR TRUNKING"), never a board's internal busbar. The distinguishing word is "TRUNKING" or "CHAMBER"/no-extra-word: a bare "BUSBAR"/"busbar chamber" inside one board is excluded; "BUSBAR TRUNKING" running between boards/levels is busduct.
    - Read the label on EACH connection to decide. Never assume by position.
 
 2. TX→MSB CAN BE EITHER BUSDUCT OR CABLE — you must check.
@@ -63,6 +63,7 @@ CRITICAL RULES — read every one before responding:
    - Starts at a cable feed-in / joint box / termination box → type "RISER", routing "FROM LEVEL x TO LEVEL y".
    - A building often has SEVERAL separate riser busducts — by code (R-A/CB-R, R-B/CB-R) or by supply function ("NORMAL SUPPLY BUSDUCT RISER", "ESSENTIAL SUPPLY BUSDUCT RISER", EMSB emergency riser) — each running up its own levels. Extract EACH as its own run, named as labelled. Do not merge them.
    - Use the actual board/level/riser names printed on the drawing (MSB-T1, EMSB, R-A/CB-R, NORMAL/ESSENTIAL SUPPLY RISER, SSB/L12, LEVEL 7, ROOF, etc.).
+   - RETROFIT/EXTENSION JOBS: a riser may be split by a dashed line or similar marker into "EXISTING BUSDUCT (up to Level n)" — already installed, NOT part of this job — and "NEW BUSDUCT (by this contractor)" / "(this contract)" — the actual scope to quote. Only extract the NEW portion; set its routing to the real level range being added (e.g. "FROM LEVEL 7 TO LEVEL 33", not the whole building), and add a flag noting the split, e.g. "Existing busduct up to Level 7 excluded — only the new/this-contract portion above it is quoted." Never quote the existing portion, and never quote the whole riser as if all of it were new.
 
 5. MATERIAL — read "ALU/AL" or "CU/COPPER" from the busduct label. If absent, default AL and flag.
 
@@ -70,7 +71,10 @@ CRITICAL RULES — read every one before responding:
    - Earth: shown "50%E"/"+50%E" → 50%E; "100%E"/"+100% EARTH"/"100% ELECTRICAL" → 100%E. "1/2 earth" = 50%E. "100% neutral + integral earth" → still 4W+50%E. "+E" / "+ E" / "c/w integral earth" means earth is integral (a feeder always has it) — NOT a 100% earth; still default 50%E unless a % is given. Not shown → default 50%E and flag.
    - Phases: "3P4W" or "TPN" or "4P"/"4 POLE" all mean 4-wire → phases "3P4W". "3P5W"/"5W" → phases "3P5W" and flag "3P5W — price on 5W feeder column".
 
-7. PIU (plug-in units on a riser) — list each plug-in/tap-off MCCB rating shown along the run (e.g. 100A, 250A, 400A TPN). If the kA interrupting rating isn't shown, flag it (default 26kA).
+7. PIU (plug-in units on a riser) — list each plug-in/tap-off MCCB rating shown along the run (e.g. 100A, 250A, 400A TPN).
+   - Some risers (especially multi-storey residential/tenant buildings) show only a tap symbol or metering-panel box (e.g. "M1", "MP-8", "DB-TU") at each level on the main riser sheet, with no ampere rating printed there. Before flagging it as unlabelled, check whether any other page supplied is a "TYPICAL METERING PANEL" / "TYPICAL TAP-OFF UNIT" detail sheet — it usually states one uniform MCCB rating (e.g. "60A TPN MCCB") that applies to every tap of that type on the riser. If found, apply that rating to every matching tap instead of leaving it blank.
+   - If no ampere rating is found on the riser or on any typical/detail sheet supplied, do not guess — record it as unrated and flag "PIU rating not labelled anywhere in the supplied pages — confirm before pricing."
+   - If the kA interrupting rating isn't shown, flag it (default 26kA).
 
 8. LENGTHS — an SLD does NOT show physical run length. Set length_m to null and flag "length not on SLD — needs layout/section or user estimate" unless a length is explicitly dimensioned.
 

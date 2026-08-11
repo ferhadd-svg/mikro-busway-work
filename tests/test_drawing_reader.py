@@ -1,5 +1,5 @@
 from app.schemas.boq import BusRun
-from app.services.drawing_reader import _normalise_run, _parse_json_response
+from app.services.drawing_reader import SYSTEM_PROMPT, _normalise_run, _parse_json_response
 
 
 # ------------------------------------------------------------------ #
@@ -109,3 +109,38 @@ def test_explicit_nulls_dropped_for_defaulted_fields():
 def test_needs_bimetal_defaults_from_material():
     assert _normalise_run(_minimal_run(material="AL"), 1)["needs_bimetal"] is True
     assert _normalise_run(_minimal_run(material="CU"), 1)["needs_bimetal"] is False
+
+
+# ------------------------------------------------------------------ #
+#  SYSTEM_PROMPT guidance                                              #
+# ------------------------------------------------------------------ #
+
+def test_prompt_covers_offsheet_piu_ratings():
+    """Real project evidence (a 537-unit residential tower): the main riser
+    sheet shows only a tap symbol (M1/M2/M3) per level with no ampere rating
+    — the actual MCCB rating (e.g. 60A TPN) is only on a separate "typical
+    metering panel" detail sheet elsewhere in the set. The model must be told
+    to check other supplied pages before flagging a tap as unrated."""
+    assert "TYPICAL METERING PANEL" in SYSTEM_PROMPT
+    assert "PIU rating not labelled anywhere in the supplied pages" in SYSTEM_PROMPT
+
+
+def test_prompt_covers_existing_vs_new_busduct_scope():
+    """Real project evidence (a retrofit/extension job, "Twin Pavilion Blok
+    F"): the riser is split by a dashed marker into "EXISTING BUSDUCT (up to
+    Level 7)" — already installed, not this job's scope — and "NEW BUSDUCT
+    (by this contractor)". Quoting the whole riser as new would double the
+    price or claim work that's already done; the model must be told to
+    extract only the new portion's actual level range."""
+    assert "EXISTING BUSDUCT" in SYSTEM_PROMPT
+    assert "RETROFIT/EXTENSION" in SYSTEM_PROMPT
+
+
+def test_prompt_covers_busbar_trunking_synonym():
+    """Real project evidence ("PRISMA MELODY" service apartments): the
+    TX-to-meter-kiosk busduct feed is labelled "BUSBAR TRUNKING", not
+    "BUSDUCT" or "BUS TRUNKING". Because the prompt's own warning about
+    excluding a switchboard's internal busbar uses the word "BUSBAR", the
+    model needs an explicit note that "BUSBAR TRUNKING" is busduct, not the
+    excluded case, to avoid a false-negative on this label."""
+    assert "BUSBAR TRUNKING" in SYSTEM_PROMPT
