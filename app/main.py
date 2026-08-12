@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse
 from app.database import engine, Base
 from app.config import settings
 from app.services.price_list import price_list
+from app.services.email import email_configured
 from app.routers import salespeople, projects, price_list as price_list_router, auth, customers
 
 
@@ -129,5 +130,6 @@ def api_status():
         "price_list_loaded": price_list.is_loaded(),
         "price_list_file": Path(price_list.loaded_file()).name if price_list.loaded_file() else None,
         "ai_reader_enabled": bool(settings.anthropic_api_key),  # True once ANTHROPIC_API_KEY is set (value never exposed)
+        "email_configured": email_configured(),  # True once SMTP_HOST/SMTP_USER are set (values never exposed)
         "api_docs": "/docs",
     }
