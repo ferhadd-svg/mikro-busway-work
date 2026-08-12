@@ -1820,10 +1820,12 @@
       }
 
       const lengthWarning = hasLength ? '' : ' <span class="tag tag-conf-low">length needed</span>';
+      const materialTag = `<span class="tag tag-${(eff.material||'AL').toLowerCase()}" title="${eff.material === 'CU' ? 'Copper' : 'Aluminium'}">${eff.material}</span>`;
 
       return `<div class="run-row" data-run="${r.run_id}">
         <div class="run-row-main">
           <span class="run-row-id">${r.run_id}</span>
+          ${materialTag}
           <span class="run-row-routing">${eff.routing}${lengthWarning}</span>
           <button class="btn btn-outline btn-sm" onclick="toggleRunEdit('${r.run_id}')">Edit</button>
         </div>
