@@ -1,4 +1,7 @@
-import smtplib
+import base64
+import json
+import urllib.error
+import urllib.request
 
 import pytest
 
@@ -6,46 +9,41 @@ from app.config import settings
 from app.services import email as email_service
 
 
-class _FakeSMTP:
-    """Records everything the sender does, so tests can assert without a
-    real network connection. Mirrors the context-manager + method surface
-    send_quotation_email() uses."""
-    last_instance = None
-
-    def __init__(self, host, port, timeout=None):
-        self.host = host
-        self.port = port
-        self.timeout = timeout
-        self.tls_started = False
-        self.login_args = None
-        self.sent_message = None
-        _FakeSMTP.last_instance = self
-
+class _FakeResponse:
     def __enter__(self):
         return self
 
     def __exit__(self, *exc):
         return False
 
-    def starttls(self, context=None):
-        self.tls_started = True
 
-    def login(self, user, password):
-        self.login_args = (user, password)
+class _FakeOpener:
+    """Records the last request urlopen() was called with, so tests can
+    assert without a real network call. Set .raise_http/.raise_url to make
+    the next call fail like a real Brevo error."""
+    def __init__(self):
+        self.last_request = None
+        self.timeout = None
+        self.raise_http = None
+        self.raise_url = None
 
-    def send_message(self, msg):
-        self.sent_message = msg
+    def __call__(self, request, timeout=None):
+        self.last_request = request
+        self.timeout = timeout
+        if self.raise_http:
+            raise self.raise_http
+        if self.raise_url:
+            raise self.raise_url
+        return _FakeResponse()
 
 
 @pytest.fixture
-def smtp_settings(monkeypatch):
-    monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
-    monkeypatch.setattr(settings, "smtp_port", 587)
-    monkeypatch.setattr(settings, "smtp_user", "sender@itmikro.com")
-    monkeypatch.setattr(settings, "smtp_password", "secret")
-    monkeypatch.setattr(settings, "smtp_from", "")
-    monkeypatch.setattr(settings, "smtp_use_tls", True)
-    monkeypatch.setattr(smtplib, "SMTP", _FakeSMTP)
+def brevo_settings(monkeypatch):
+    monkeypatch.setattr(settings, "brevo_api_key", "fake-api-key")
+    monkeypatch.setattr(settings, "email_from", "sender@itmikro.com")
+    fake = _FakeOpener()
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    return fake
 
 
 def _attachment(tmp_path):
@@ -54,27 +52,37 @@ def _attachment(tmp_path):
     return f
 
 
-def test_email_configured_false_when_host_empty(monkeypatch):
-    monkeypatch.setattr(settings, "smtp_host", "")
-    monkeypatch.setattr(settings, "smtp_user", "x@y.com")
+def _payload_of(request):
+    return json.loads(request.data.decode())
+
+
+def test_email_configured_false_when_api_key_empty(monkeypatch):
+    monkeypatch.setattr(settings, "brevo_api_key", "")
+    monkeypatch.setattr(settings, "email_from", "x@y.com")
     assert email_service.email_configured() is False
 
 
-def test_email_configured_true_when_host_and_user_set(monkeypatch):
-    monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
-    monkeypatch.setattr(settings, "smtp_user", "x@y.com")
+def test_email_configured_false_when_from_empty(monkeypatch):
+    monkeypatch.setattr(settings, "brevo_api_key", "fake-key")
+    monkeypatch.setattr(settings, "email_from", "")
+    assert email_service.email_configured() is False
+
+
+def test_email_configured_true_when_both_set(monkeypatch):
+    monkeypatch.setattr(settings, "brevo_api_key", "fake-key")
+    monkeypatch.setattr(settings, "email_from", "x@y.com")
     assert email_service.email_configured() is True
 
 
 def test_send_raises_when_not_configured(monkeypatch, tmp_path):
-    monkeypatch.setattr(settings, "smtp_host", "")
+    monkeypatch.setattr(settings, "brevo_api_key", "")
     with pytest.raises(RuntimeError):
         email_service.send_quotation_email(
             ["c@client.com"], [], "Subj", "Body", _attachment(tmp_path)
         )
 
 
-def test_send_composes_message_and_attaches_file(smtp_settings, tmp_path):
+def test_send_posts_expected_payload_and_headers(brevo_settings, tmp_path):
     email_service.send_quotation_email(
         to=["client@acme.com", "buyer@acme.com"],
         cc=["sales@itmikro.com"],
@@ -82,29 +90,48 @@ def test_send_composes_message_and_attaches_file(smtp_settings, tmp_path):
         body="Please find attached.",
         attachment=_attachment(tmp_path),
     )
-    smtp = _FakeSMTP.last_instance
-    assert smtp.tls_started is True
-    assert smtp.login_args == ("sender@itmikro.com", "secret")
+    req = brevo_settings.last_request
+    assert req.full_url == email_service.BREVO_API_URL
+    assert req.get_header("Api-key") == "fake-api-key"
+    assert req.get_header("Content-type") == "application/json"
 
-    msg = smtp.sent_message
-    assert msg["From"] == "sender@itmikro.com"       # smtp_from blank -> falls back to user
-    assert msg["To"] == "client@acme.com, buyer@acme.com"
-    assert msg["Cc"] == "sales@itmikro.com"
-    assert msg["Subject"] == "Quotation MK/1"
+    payload = _payload_of(req)
+    assert payload["sender"] == {"email": "sender@itmikro.com"}
+    assert payload["to"] == [{"email": "client@acme.com"}, {"email": "buyer@acme.com"}]
+    assert payload["cc"] == [{"email": "sales@itmikro.com"}]
+    assert payload["subject"] == "Quotation MK/1"
+    assert payload["textContent"] == "Please find attached."
 
-    attachments = [p for p in msg.iter_attachments()]
+    attachments = payload["attachment"]
     assert len(attachments) == 1
-    part = attachments[0]
-    assert part.get_filename() == "QUOTATION_MK-1.xlsx"
-    assert part.get_content_type() == (
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-    assert part.get_payload(decode=True) == b"fake-xlsx-bytes"
+    assert attachments[0]["name"] == "QUOTATION_MK-1.xlsx"
+    assert base64.b64decode(attachments[0]["content"]) == b"fake-xlsx-bytes"
 
 
-def test_send_uses_smtp_from_when_set(smtp_settings, tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "smtp_from", "quotes@itmikro.com")
+def test_send_omits_cc_when_empty(brevo_settings, tmp_path):
     email_service.send_quotation_email(
         ["client@acme.com"], [], "Subj", "Body", _attachment(tmp_path)
     )
-    assert _FakeSMTP.last_instance.sent_message["From"] == "quotes@itmikro.com"
+    payload = _payload_of(brevo_settings.last_request)
+    assert "cc" not in payload
+
+
+def test_send_wraps_http_error(brevo_settings, tmp_path):
+    """A distinct type from RuntimeError — the router uses that distinction
+    to tell "not configured" (400) apart from "send failed" (502)."""
+    brevo_settings.raise_http = urllib.error.HTTPError(
+        email_service.BREVO_API_URL, 401, "Unauthorized",
+        hdrs=None, fp=__import__("io").BytesIO(b'{"message":"invalid api-key"}'),
+    )
+    with pytest.raises(ConnectionError, match="invalid api-key"):
+        email_service.send_quotation_email(
+            ["client@acme.com"], [], "Subj", "Body", _attachment(tmp_path)
+        )
+
+
+def test_send_wraps_url_error(brevo_settings, tmp_path):
+    brevo_settings.raise_url = urllib.error.URLError("Network unreachable")
+    with pytest.raises(ConnectionError, match="Network unreachable"):
+        email_service.send_quotation_email(
+            ["client@acme.com"], [], "Subj", "Body", _attachment(tmp_path)
+        )
