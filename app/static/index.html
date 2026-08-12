@@ -219,9 +219,14 @@
       padding: 0 6px;
       cursor: default;
     }
-    /* Steps already reached can be clicked to jump back/forth. */
+    /* Steps already reached can be clicked to jump back/forth. Underline is
+       hover-only (useless on touch), so reachable-but-inactive steps also
+       get a permanent dotted underline as a visible, non-hover affordance —
+       otherwise a "done" step just looks like a static checkmark record. */
     .step-item.reachable { cursor: pointer; }
-    .step-item.reachable:hover .step-text { text-decoration: underline; }
+    .step-item.reachable:not(.active) .step-text { text-decoration: underline dotted; text-decoration-color: currentColor; opacity: .85; }
+    .step-item.reachable:hover .step-text { text-decoration: underline solid; opacity: 1; }
+    .progress-hint { font-size: .74rem; color: var(--muted); margin-top: 8px; }
     .step-circle {
       width: 30px;
       height: 30px;
@@ -790,6 +795,7 @@
           <div class="step-text">Quotation</div>
         </div>
       </div>
+      <div class="progress-hint">↩ Click any completed step above to jump back and make changes — nothing you've entered is lost.</div>
     </div>
 
     <!-- STEP 1 -->
