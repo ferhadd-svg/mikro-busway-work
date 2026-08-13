@@ -44,7 +44,7 @@ def _signature_html(name: str, title: str, mobile: str, email: str) -> str:
     logo_url = settings.public_base_url.rstrip("/") + "/static/mikro-logo.png"
     logo_img = (
         f'<img src="{logo_url}" alt="{COMPANY_NAME}" '
-        f'style="height:48px;display:block;margin-bottom:8px;">'
+        f'style="height:110px;display:block;margin-bottom:10px;">'
     )
     address_html = "<br>".join(html.escape(line) for line in COMPANY_ADDRESS_LINES)
     return (
