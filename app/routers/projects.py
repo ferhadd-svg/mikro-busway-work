@@ -470,9 +470,9 @@ def email_quotation(project_id: int, data: EmailQuotationRequest, db: Session = 
 
     try:
         send_quotation_email(to, cc, subject, body, path)
-    except RuntimeError as e:      # not configured
-        raise HTTPException(400, str(e))
-    except Exception as e:         # SMTP / send failure
+    except RuntimeError as e:       # not configured (see send_quotation_email's docstring —
+        raise HTTPException(400, str(e))  # ConnectionError is used for API failures precisely
+    except Exception as e:          # so it lands here, not in the branch above, as a 502.
         raise HTTPException(502, f"Failed to send email: {e}")
 
     # Audit trail on the customer's append-only activity log (Phase 3).

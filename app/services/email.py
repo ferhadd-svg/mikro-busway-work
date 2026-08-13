@@ -1,25 +1,27 @@
 """
-Send a generated quotation by email over SMTP.
+Send a generated quotation by email via the Brevo transactional email API.
 
 Kept as a thin service (same separation as apply_outcome in
 app.services.projects) so the router stays thin and this is unit-testable
-by monkeypatching smtplib.SMTP. SMTP is the only transport for now; if a
-transactional-email API is added later, only this module changes.
+by monkeypatching urllib.request.urlopen. HTTPS is the only transport —
+Render's free plan blocks all outbound traffic on SMTP ports 25/465/587,
+so raw smtplib never works there regardless of correct credentials.
 """
 
-import smtplib
-import ssl
-from email.message import EmailMessage
+import base64
+import json
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from app.config import settings
 
-_XLSX_SUBTYPE = "vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 
 def email_configured() -> bool:
-    """True only when enough SMTP config exists to attempt a send."""
-    return bool(settings.smtp_host and settings.smtp_user)
+    """True only when enough config exists to attempt a send."""
+    return bool(settings.brevo_api_key and settings.email_from)
 
 
 def send_quotation_email(
@@ -30,30 +32,44 @@ def send_quotation_email(
     attachment: Path,
 ) -> None:
     """Compose and send the quotation email with the .xlsx attached.
-    Raises RuntimeError if email isn't configured; lets smtplib exceptions
-    propagate so the router can surface a send failure distinctly."""
+    Raises RuntimeError if email isn't configured (the router maps this to a
+    400 "not configured" response); raises ConnectionError if the API call
+    itself fails (mapped to a 502 "send failed" response) — kept as a
+    distinct type from RuntimeError so the router's except-clauses tell the
+    two failure modes apart."""
     if not email_configured():
         raise RuntimeError(
-            "Email is not configured. Set SMTP_HOST / SMTP_USER / SMTP_PASSWORD."
+            "Email is not configured. Set BREVO_API_KEY / EMAIL_FROM."
         )
 
-    msg = EmailMessage()
-    msg["From"] = settings.smtp_from or settings.smtp_user
-    msg["To"] = ", ".join(to)
+    payload = {
+        "sender": {"email": settings.email_from},
+        "to": [{"email": addr} for addr in to],
+        "subject": subject,
+        "textContent": body,
+        "attachment": [{
+            "content": base64.b64encode(attachment.read_bytes()).decode(),
+            "name": attachment.name,
+        }],
+    }
     if cc:
-        msg["Cc"] = ", ".join(cc)
-    msg["Subject"] = subject
-    msg.set_content(body)
+        payload["cc"] = [{"email": addr} for addr in cc]
 
-    msg.add_attachment(
-        attachment.read_bytes(),
-        maintype="application",
-        subtype=_XLSX_SUBTYPE,
-        filename=attachment.name,
+    request = urllib.request.Request(
+        BREVO_API_URL,
+        data=json.dumps(payload).encode(),
+        headers={
+            "api-key": settings.brevo_api_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
     )
-
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as server:
-        if settings.smtp_use_tls:
-            server.starttls(context=ssl.create_default_context())
-        server.login(settings.smtp_user, settings.smtp_password)
-        server.send_message(msg)  # send_message routes To + Cc automatically
+    try:
+        with urllib.request.urlopen(request, timeout=30):
+            pass
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")
+        raise ConnectionError(f"Brevo send failed ({e.code}): {detail}") from e
+    except urllib.error.URLError as e:
+        raise ConnectionError(f"Could not reach Brevo: {e.reason}") from e

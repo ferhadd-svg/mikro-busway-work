@@ -40,16 +40,16 @@ class Settings(BaseSettings):
     session_lifetime_days: int = 14
     cookie_secure: bool = False   # set True in production once served over HTTPS
 
-    # Email (SMTP) — optional. Empty smtp_host disables the "email quotation"
+    # Email — optional, sent via the Brevo transactional email HTTP API (not
+    # raw SMTP: Render's free plan blocks all outbound traffic on SMTP ports
+    # 25/465/587 — confirmed live 2026-08-12, every send failed with "Network
+    # unreachable" regardless of correct credentials — so this must go over
+    # HTTPS instead). Empty brevo_api_key disables the "email quotation"
     # feature entirely; the endpoint returns a clear 400 and the UI shows a
-    # "not configured" note. Set these as Render env vars (they persist across
-    # deploys, unlike the ephemeral DB).
-    smtp_host: str = ""
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
-    smtp_from: str = ""           # falls back to smtp_user if blank
-    smtp_use_tls: bool = True     # STARTTLS on port 587
+    # "not configured" note. Set these as Render env vars (they persist
+    # across deploys, unlike the ephemeral DB).
+    brevo_api_key: str = ""
+    email_from: str = ""          # must be a Brevo-verified sender address
 
     class Config:
         env_file = ".env"
