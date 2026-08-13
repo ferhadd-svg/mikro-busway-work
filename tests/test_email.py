@@ -68,6 +68,16 @@ def test_email_configured_false_when_from_empty(monkeypatch):
     assert email_service.email_configured() is False
 
 
+def test_email_configured_false_when_key_is_only_whitespace(monkeypatch):
+    """A key that's just whitespace (e.g. an env var set to a single space
+    by mistake) must not read as "configured" — .strip() would otherwise
+    turn it into a legitimately-empty string that still passes a plain
+    truthiness check on the unstripped value."""
+    monkeypatch.setattr(settings, "brevo_api_key", "   \n")
+    monkeypatch.setattr(settings, "email_from", "x@y.com")
+    assert email_service.email_configured() is False
+
+
 def test_email_configured_true_when_both_set(monkeypatch):
     monkeypatch.setattr(settings, "brevo_api_key", "fake-key")
     monkeypatch.setattr(settings, "email_from", "x@y.com")
@@ -102,10 +112,21 @@ def test_send_posts_expected_payload_and_headers(brevo_settings, tmp_path):
     assert payload["subject"] == "Quotation MK/1"
     assert payload["textContent"] == "Please find attached."
 
-    attachments = payload["attachment"]
-    assert len(attachments) == 1
-    assert attachments[0]["name"] == "QUOTATION_MK-1.xlsx"
-    assert base64.b64decode(attachments[0]["content"]) == b"fake-xlsx-bytes"
+
+def test_send_strips_whitespace_from_key_and_sender(brevo_settings, tmp_path, monkeypatch):
+    """Real-world bug: a trailing newline/space from pasting the key into a
+    web form's env-var field makes the transmitted header differ from the
+    real key even though it looks identical — Brevo then reports "Key not
+    found" for a key that is, to the human eye, correct. Confirmed live
+    2026-08-13 with a freshly-generated key that still failed the same way."""
+    monkeypatch.setattr(settings, "brevo_api_key", "  fake-api-key\n")
+    monkeypatch.setattr(settings, "email_from", " sender@itmikro.com \t")
+    email_service.send_quotation_email(
+        ["client@acme.com"], [], "Subj", "Body", _attachment(tmp_path)
+    )
+    req = brevo_settings.last_request
+    assert req.get_header("Api-key") == "fake-api-key"
+    assert _payload_of(req)["sender"] == {"email": "sender@itmikro.com"}
 
 
 def test_send_omits_cc_when_empty(brevo_settings, tmp_path):

@@ -19,9 +19,17 @@ from app.config import settings
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
 
+def _api_key() -> str:
+    return settings.brevo_api_key.strip()
+
+
+def _sender_email() -> str:
+    return settings.email_from.strip()
+
+
 def email_configured() -> bool:
     """True only when enough config exists to attempt a send."""
-    return bool(settings.brevo_api_key and settings.email_from)
+    return bool(_api_key() and _sender_email())
 
 
 def send_quotation_email(
@@ -43,7 +51,7 @@ def send_quotation_email(
         )
 
     payload = {
-        "sender": {"email": settings.email_from},
+        "sender": {"email": _sender_email()},
         "to": [{"email": addr} for addr in to],
         "subject": subject,
         "textContent": body,
@@ -59,7 +67,7 @@ def send_quotation_email(
         BREVO_API_URL,
         data=json.dumps(payload).encode(),
         headers={
-            "api-key": settings.brevo_api_key,
+            "api-key": _api_key(),
             "Content-Type": "application/json",
             "Accept": "application/json",
         },
