@@ -129,6 +129,31 @@ def test_send_strips_whitespace_from_key_and_sender(brevo_settings, tmp_path, mo
     assert _payload_of(req)["sender"] == {"email": "sender@itmikro.com"}
 
 
+def test_send_appends_signature_when_sender_given(brevo_settings, tmp_path):
+    email_service.send_quotation_email(
+        ["client@acme.com"], [], "Subj", "Please find attached.", _attachment(tmp_path),
+        sender_name="Eric Wong", sender_title="Sales Executive",
+        sender_mobile="012-345 6789", sender_email="eric@itmikro.com",
+    )
+    payload = _payload_of(brevo_settings.last_request)
+    assert "Please find attached." in payload["textContent"]
+    assert "Eric Wong" in payload["textContent"]
+    assert "Sales Executive" in payload["textContent"]
+    assert "012-345 6789" in payload["textContent"]
+    assert "MIKRO BUSWAY SDN BHD" in payload["textContent"]
+    assert "Eric Wong" in payload["htmlContent"]
+    assert "<img src=\"data:image/png;base64," in payload["htmlContent"]
+
+
+def test_send_no_signature_when_sender_omitted(brevo_settings, tmp_path):
+    email_service.send_quotation_email(
+        ["client@acme.com"], [], "Subj", "Please find attached.", _attachment(tmp_path),
+    )
+    payload = _payload_of(brevo_settings.last_request)
+    assert payload["textContent"] == "Please find attached."
+    assert "htmlContent" not in payload
+
+
 def test_send_omits_cc_when_empty(brevo_settings, tmp_path):
     email_service.send_quotation_email(
         ["client@acme.com"], [], "Subj", "Body", _attachment(tmp_path)

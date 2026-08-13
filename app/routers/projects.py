@@ -467,9 +467,16 @@ def email_quotation(project_id: int, data: EmailQuotationRequest, db: Session = 
         f"Dear Sir/Madam,\n\nPlease find attached our quotation "
         f"{project.our_ref} for {project.client_name}.\n\nThank you."
     )
+    sp = db.get(Salesperson, project.salesperson_id) if project.salesperson_id else None
 
     try:
-        send_quotation_email(to, cc, subject, body, path)
+        send_quotation_email(
+            to, cc, subject, body, path,
+            sender_name=sp.name if sp else None,
+            sender_title=sp.title if sp else None,
+            sender_mobile=sp.mobile if sp else None,
+            sender_email=sp.email if sp else None,
+        )
     except RuntimeError as e:       # not configured (see send_quotation_email's docstring —
         raise HTTPException(400, str(e))  # ConnectionError is used for API failures precisely
     except Exception as e:          # so it lands here, not in the branch above, as a 502.
