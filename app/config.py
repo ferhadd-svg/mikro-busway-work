@@ -51,6 +51,13 @@ class Settings(BaseSettings):
     brevo_api_key: str = ""
     email_from: str = ""          # must be a Brevo-verified sender address
 
+    # Used to build an absolute URL for the logo in HTML emails — most email
+    # clients (Gmail included) strip inline base64 data: URI images from HTML
+    # bodies as a spam/security heuristic, so the logo must be a real hosted
+    # URL instead. Override with PUBLIC_BASE_URL if the app ever moves off
+    # this Render URL (e.g. a custom domain).
+    public_base_url: str = "https://new-mikro-16.onrender.com"
+
     class Config:
         env_file = ".env"
 

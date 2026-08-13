@@ -142,7 +142,7 @@ def test_send_appends_signature_when_sender_given(brevo_settings, tmp_path):
     assert "012-345 6789" in payload["textContent"]
     assert "MIKRO BUSWAY SDN BHD" in payload["textContent"]
     assert "Eric Wong" in payload["htmlContent"]
-    assert "<img src=\"data:image/png;base64," in payload["htmlContent"]
+    assert "<img src=\"https://new-mikro-16.onrender.com/static/mikro-logo.png\"" in payload["htmlContent"]
 
 
 def test_send_no_signature_when_sender_omitted(brevo_settings, tmp_path):
