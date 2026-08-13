@@ -44,17 +44,17 @@ def _signature_html(name: str, title: str, mobile: str, email: str) -> str:
     logo_url = settings.public_base_url.rstrip("/") + "/static/mikro-logo.png"
     logo_img = (
         f'<img src="{logo_url}" alt="{COMPANY_NAME}" '
-        f'style="height:110px;display:block;margin-bottom:10px;">'
+        f'style="height:170px;display:block;margin-bottom:6px;">'
     )
     address_html = "<br>".join(html.escape(line) for line in COMPANY_ADDRESS_LINES)
     return (
-        '<div style="font-family:Arial,sans-serif;font-size:13px;color:#333;">'
+        '<div style="font-family:Arial,sans-serif;font-size:13px;color:#333;line-height:1.35;">'
         f"{logo_img}"
         f"<div><b>{html.escape(name)}</b></div>"
         f"<div>{html.escape(title)}</div>"
         f"<div>Tel: {html.escape(mobile)}</div>"
         f"<div>Email: {html.escape(email)}</div>"
-        "<br>"
+        '<div style="height:8px;"></div>'
         f"<div><b>{COMPANY_NAME}</b></div>"
         f"<div>{address_html}</div>"
         f"<div>Tel: {COMPANY_PHONE}</div>"
