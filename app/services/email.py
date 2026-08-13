@@ -19,7 +19,6 @@ from app.config import settings
 
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 
-LOGO_PATH = Path(__file__).resolve().parent.parent / "static" / "mikro-logo.png"
 COMPANY_NAME = "MIKRO BUSWAY SDN BHD"
 COMPANY_ADDRESS_LINES = [
     "No.61 & 62, Jalan Platinum 5/3,",
@@ -42,15 +41,11 @@ def _signature_text(name: str, title: str, mobile: str, email: str) -> str:
 
 
 def _signature_html(name: str, title: str, mobile: str, email: str) -> str:
-    logo_img = ""
-    try:
-        logo_b64 = base64.b64encode(LOGO_PATH.read_bytes()).decode()
-        logo_img = (
-            f'<img src="data:image/png;base64,{logo_b64}" alt="{COMPANY_NAME}" '
-            f'style="height:48px;display:block;margin-bottom:8px;">'
-        )
-    except OSError:
-        pass
+    logo_url = settings.public_base_url.rstrip("/") + "/static/mikro-logo.png"
+    logo_img = (
+        f'<img src="{logo_url}" alt="{COMPANY_NAME}" '
+        f'style="height:48px;display:block;margin-bottom:8px;">'
+    )
     address_html = "<br>".join(html.escape(line) for line in COMPANY_ADDRESS_LINES)
     return (
         '<div style="font-family:Arial,sans-serif;font-size:13px;color:#333;">'
