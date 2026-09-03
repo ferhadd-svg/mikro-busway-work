@@ -121,6 +121,44 @@
       margin-bottom: 12px;
     }
     #sidebar-toggle:hover { background: var(--grey-bg); color: var(--text); }
+    #sidebar-close {
+      display: none;
+      align-self: flex-end;
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 6px 10px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+    }
+    #sidebar-close:hover { background: var(--grey-bg); color: var(--text); }
+    /* Hamburger control + backdrop for the mobile drawer — both stay
+       hidden on desktop; the mobile media query switches them on. */
+    #mobile-menu-toggle {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      height: 38px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 1.15rem;
+      cursor: pointer;
+      margin-right: 10px;
+      flex-shrink: 0;
+    }
+    #mobile-menu-toggle:hover { background: var(--grey-bg); }
+    #sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(20, 24, 30, .4);
+      z-index: 290;
+    }
     #sidebar-nav { display: flex; flex-direction: column; gap: 4px; }
     .side-link {
       display: flex;
@@ -655,27 +693,102 @@
       .form-grid, .form-grid.three { grid-template-columns: 1fr; }
       .mode-grid { grid-template-columns: 1fr; }
 
+      /* Projects list search+filter row: the status <select> has a fixed
+         width:200px (inline style, sized for desktop) that doesn't fit
+         next to the flex:1 search input on a phone screen — found live
+         while testing (57px of real page overflow). */
+      .filter-row { flex-wrap: wrap; }
+      .filter-row select { width: 100% !important; }
+
       /* Banners / totals wrap cleanly */
       .demo-banner { flex-wrap: wrap; padding: 18px; }
       .btn-demo { margin-left: 0; width: 100%; justify-content: center; }
       .totals-block { padding: 18px; }
 
-      /* Sidebar becomes a horizontal, non-collapsible icon bar */
+      /* Sidebar becomes an off-canvas drawer: hidden past the left edge by
+         default, slid in via the hamburger button in the header, closed by
+         tapping the backdrop or any nav item. position:fixed takes it
+         completely out of #app-shell's flex flow, so (unlike the earlier
+         horizontal-icon-bar version) it can't fight main's width — main's
+         own width:100% fix above still stands on its own merits, but the
+         sidebar no longer needs #sidebar-nav row/width overrides to match. */
       #app-shell { flex-direction: column; }
+      #mobile-menu-toggle { display: inline-flex; }
       #app-sidebar {
-        position: static; height: auto; width: 100%; border-right: none;
-        border-bottom: 1px solid var(--border); flex-direction: row; overflow-x: auto;
+        position: fixed; top: 0; left: 0; height: 100vh;
+        width: min(260px, 80vw);
+        z-index: 300;
+        transform: translateX(-100%);
+        transition: transform .22s ease;
+        box-shadow: 2px 0 24px rgba(0,0,0,.18);
       }
-      #app-sidebar.collapsed { width: 100%; }
-      /* #sidebar-nav (the actual icon-button row) has its own separate
-         flex-direction: column from the desktop rule — overriding
-         #app-sidebar above only rearranges its direct children (this nav
-         plus the now-hidden toggle button), so without this the icons
-         still stack into a cramped 44px-wide vertical rail. */
-      #sidebar-nav { flex-direction: row; width: 100%; justify-content: space-around; }
-      .side-label { display: none; }
-      #sidebar-toggle { display: none; }
+      #app-sidebar.mobile-open { transform: translateX(0); }
+      #app-sidebar.collapsed { width: min(260px, 80vw); }
+      #app-sidebar.collapsed .side-label { display: inline; }
+      #sidebar-backdrop.visible { display: block; }
+      #sidebar-toggle { display: none; } /* desktop-only collapse control */
+      #sidebar-close { display: block; }
       .metric-grid { grid-template-columns: 1fr 1fr; }
+
+      /* Directory-style lists (Projects, Customers) — a wide data table
+         squeezed into a phone screen forces sideways scrolling to read
+         columns like Status or Outcome. Restack each row into its own
+         tappable card instead, with the column name as a label before
+         each value (from the td's data-label attribute). Opt-in via the
+         .responsive-cards class rather than applying to every table —
+         the Browse Rates price list table has hundreds of dense rows
+         where this would make scanning worse, not better. */
+      .table-wrap.responsive-cards { overflow-x: visible; border: none; }
+      .table-wrap.responsive-cards table,
+      .table-wrap.responsive-cards tbody,
+      .table-wrap.responsive-cards tr,
+      .table-wrap.responsive-cards td { display: block; width: 100%; }
+      .table-wrap.responsive-cards thead { display: none; }
+      .table-wrap.responsive-cards tr {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        margin-bottom: 10px;
+        padding: 12px 14px;
+        background: #fff;
+      }
+      .table-wrap.responsive-cards td {
+        border: none;
+        padding: 5px 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        text-align: right;
+      }
+      .table-wrap.responsive-cards td:empty { display: none; }
+      .table-wrap.responsive-cards td[data-label]:not([data-label=""])::before {
+        content: attr(data-label);
+        font-size: .68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: var(--muted);
+        text-align: left;
+      }
+      /* The ref/company name is the card's own heading, not a labeled
+         field alongside its value. */
+      .table-wrap.responsive-cards td:first-child {
+        justify-content: flex-start;
+        font-size: 1rem;
+        padding-bottom: 8px;
+        margin-bottom: 4px;
+        border-bottom: 1px solid var(--border);
+      }
+      /* Must out-rank the [data-label]:not(...) rule above (2 classes + an
+         attribute + a :not() beats 2 classes + :first-child alone) or the
+         label leaks back in — confirmed live before fixing this. */
+      .table-wrap.responsive-cards td[data-label]:first-child::before { content: none !important; }
+      .table-wrap.responsive-cards td:last-child:not(:first-child) {
+        justify-content: flex-end;
+        padding-top: 8px;
+        margin-top: 4px;
+        border-top: 1px solid var(--border);
+      }
     }
 
     @media (max-width: 430px) {
@@ -712,6 +825,7 @@
 
 <!-- ── Header ─────────────────────────────────────────────────── -->
 <header id="app-header" style="display:none;">
+  <button id="mobile-menu-toggle" onclick="toggleMobileSidebar()" aria-label="Open menu">☰</button>
   <div class="logo-area">
     <img src="/static/mikro-logo.png" alt="Mikro"
          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
@@ -747,10 +861,12 @@
 
 <!-- ── Shell ──────────────────────────────────────────────────── -->
 <div id="app-shell" style="display:none;">
+<div id="sidebar-backdrop" onclick="closeMobileSidebar()"></div>
 <aside id="app-sidebar">
   <button id="sidebar-toggle" onclick="toggleSidebar()" title="Collapse sidebar">
     <span class="sidebar-toggle-icon">‹</span>
   </button>
+  <button id="sidebar-close" onclick="closeMobileSidebar()" aria-label="Close menu">✕</button>
   <nav id="sidebar-nav">
     <button class="side-link" id="nav-dashboard" onclick="showTab('dashboard')">
       <span class="side-icon">▦</span><span class="side-label">Dashboard</span>
@@ -1030,7 +1146,7 @@
     <div class="card">
       <div class="card-eyebrow">Overview</div>
       <div class="card-heading">All Projects</div>
-      <div style="display:flex; gap:12px; margin-bottom:16px;">
+      <div class="filter-row" style="display:flex; gap:12px; margin-bottom:16px;">
         <input id="proj-search" placeholder="Search by ref or client..." style="flex:1;" oninput="filterProjects()" />
         <select id="proj-status-filter" onchange="filterProjects()" style="width:200px;">
           <option value="">All statuses</option>
@@ -1348,7 +1464,23 @@
     await loadCustomers();
     setupDragDrop();
     addRunCard();
+    // Tapping any nav item should close the mobile drawer, not leave it
+    // covering whatever tab just opened — one delegated listener instead
+    // of touching each side-link's own onclick.
+    document.getElementById('sidebar-nav').addEventListener('click', (e) => {
+      if (e.target.closest('.side-link')) closeMobileSidebar();
+    });
     showTab('dashboard');
+  }
+
+  function toggleMobileSidebar() {
+    document.getElementById('app-sidebar').classList.toggle('mobile-open');
+    document.getElementById('sidebar-backdrop').classList.toggle('visible');
+  }
+
+  function closeMobileSidebar() {
+    document.getElementById('app-sidebar').classList.remove('mobile-open');
+    document.getElementById('sidebar-backdrop').classList.remove('visible');
   }
 
   function toggleSidebar() {
@@ -2112,16 +2244,19 @@
         : '';
       return `
       <tr onclick="openProject(${p.id})" style="cursor:pointer;">
-        <td><strong>${p.our_ref}</strong></td>
-        <td>${p.client_name}</td>
-        <td>${p.salesperson_name || '—'}</td>
-        <td><span class="tag s-${p.status}">${p.status.replace(/_/g,' ')}</span></td>
-        <td>${outcomeTag}</td>
-        <td>${new Date(p.updated_at).toLocaleDateString()}</td>
-        <td>${outcomeBtn}</td>
+        <td data-label="Ref"><strong>${p.our_ref}</strong></td>
+        <td data-label="Client">${p.client_name}</td>
+        <td data-label="Salesperson">${p.salesperson_name || '—'}</td>
+        <td data-label="Status"><span class="tag s-${p.status}">${p.status.replace(/_/g,' ')}</span></td>
+        <td data-label="Outcome">${outcomeTag}</td>
+        <td data-label="Updated">${new Date(p.updated_at).toLocaleDateString()}</td>
+        <td data-label="">${outcomeBtn}</td>
       </tr>`;
     }).join('');
-    return `<div class="table-wrap"><table>
+    // responsive-cards: on narrow screens this table restacks into a list
+    // of tappable cards instead of a scroll-sideways-to-read-it table —
+    // see the @media block near the other responsive rules.
+    return `<div class="table-wrap responsive-cards"><table>
       <thead><tr><th>Ref</th><th>Client</th><th>Salesperson</th><th>Status</th><th>Outcome</th><th>Updated</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`;
@@ -2210,12 +2345,13 @@
     }
     const rows = customers.map(c => `
       <tr onclick="showCustomerDetail(${c.id})" style="cursor:pointer;">
-        <td><strong>${c.company_name}</strong></td>
-        <td>${c.primary_contact_name || '—'}</td>
-        <td>${c.project_count}</td>
-        <td><span class="tag" style="background:${c.is_active?'var(--green-light)':'var(--grey-bg)'}; color:${c.is_active?'var(--green)':'var(--muted)'};">${c.is_active?'Active':'Archived'}</span></td>
+        <td data-label="Company"><strong>${c.company_name}</strong></td>
+        <td data-label="Primary Contact">${c.primary_contact_name || '—'}</td>
+        <td data-label="Projects">${c.project_count}</td>
+        <td data-label="Status"><span class="tag" style="background:${c.is_active?'var(--green-light)':'var(--grey-bg)'}; color:${c.is_active?'var(--green)':'var(--muted)'};">${c.is_active?'Active':'Archived'}</span></td>
       </tr>`).join('');
-    return `<div class="table-wrap"><table>
+    // responsive-cards: see renderProjectsTable's comment — same treatment.
+    return `<div class="table-wrap responsive-cards"><table>
       <thead><tr><th>Company</th><th>Primary Contact</th><th>Projects</th><th>Status</th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`;
