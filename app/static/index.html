@@ -121,6 +121,44 @@
       margin-bottom: 12px;
     }
     #sidebar-toggle:hover { background: var(--grey-bg); color: var(--text); }
+    #sidebar-close {
+      display: none;
+      align-self: flex-end;
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 6px 10px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+    }
+    #sidebar-close:hover { background: var(--grey-bg); color: var(--text); }
+    /* Hamburger control + backdrop for the mobile drawer — both stay
+       hidden on desktop; the mobile media query switches them on. */
+    #mobile-menu-toggle {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      height: 38px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 1.15rem;
+      cursor: pointer;
+      margin-right: 10px;
+      flex-shrink: 0;
+    }
+    #mobile-menu-toggle:hover { background: var(--grey-bg); }
+    #sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(20, 24, 30, .4);
+      z-index: 290;
+    }
     #sidebar-nav { display: flex; flex-direction: column; gap: 4px; }
     .side-link {
       display: flex;
@@ -667,21 +705,29 @@
       .btn-demo { margin-left: 0; width: 100%; justify-content: center; }
       .totals-block { padding: 18px; }
 
-      /* Sidebar becomes a horizontal, non-collapsible icon bar */
+      /* Sidebar becomes an off-canvas drawer: hidden past the left edge by
+         default, slid in via the hamburger button in the header, closed by
+         tapping the backdrop or any nav item. position:fixed takes it
+         completely out of #app-shell's flex flow, so (unlike the earlier
+         horizontal-icon-bar version) it can't fight main's width — main's
+         own width:100% fix above still stands on its own merits, but the
+         sidebar no longer needs #sidebar-nav row/width overrides to match. */
       #app-shell { flex-direction: column; }
+      #mobile-menu-toggle { display: inline-flex; }
       #app-sidebar {
-        position: static; height: auto; width: 100%; border-right: none;
-        border-bottom: 1px solid var(--border); flex-direction: row; overflow-x: auto;
+        position: fixed; top: 0; left: 0; height: 100vh;
+        width: min(260px, 80vw);
+        z-index: 300;
+        transform: translateX(-100%);
+        transition: transform .22s ease;
+        box-shadow: 2px 0 24px rgba(0,0,0,.18);
       }
-      #app-sidebar.collapsed { width: 100%; }
-      /* #sidebar-nav (the actual icon-button row) has its own separate
-         flex-direction: column from the desktop rule — overriding
-         #app-sidebar above only rearranges its direct children (this nav
-         plus the now-hidden toggle button), so without this the icons
-         still stack into a cramped 44px-wide vertical rail. */
-      #sidebar-nav { flex-direction: row; width: 100%; justify-content: space-around; }
-      .side-label { display: none; }
-      #sidebar-toggle { display: none; }
+      #app-sidebar.mobile-open { transform: translateX(0); }
+      #app-sidebar.collapsed { width: min(260px, 80vw); }
+      #app-sidebar.collapsed .side-label { display: inline; }
+      #sidebar-backdrop.visible { display: block; }
+      #sidebar-toggle { display: none; } /* desktop-only collapse control */
+      #sidebar-close { display: block; }
       .metric-grid { grid-template-columns: 1fr 1fr; }
 
       /* Directory-style lists (Projects, Customers) — a wide data table
@@ -779,6 +825,7 @@
 
 <!-- ── Header ─────────────────────────────────────────────────── -->
 <header id="app-header" style="display:none;">
+  <button id="mobile-menu-toggle" onclick="toggleMobileSidebar()" aria-label="Open menu">☰</button>
   <div class="logo-area">
     <img src="/static/mikro-logo.png" alt="Mikro"
          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
@@ -814,10 +861,12 @@
 
 <!-- ── Shell ──────────────────────────────────────────────────── -->
 <div id="app-shell" style="display:none;">
+<div id="sidebar-backdrop" onclick="closeMobileSidebar()"></div>
 <aside id="app-sidebar">
   <button id="sidebar-toggle" onclick="toggleSidebar()" title="Collapse sidebar">
     <span class="sidebar-toggle-icon">‹</span>
   </button>
+  <button id="sidebar-close" onclick="closeMobileSidebar()" aria-label="Close menu">✕</button>
   <nav id="sidebar-nav">
     <button class="side-link" id="nav-dashboard" onclick="showTab('dashboard')">
       <span class="side-icon">▦</span><span class="side-label">Dashboard</span>
@@ -1415,7 +1464,23 @@
     await loadCustomers();
     setupDragDrop();
     addRunCard();
+    // Tapping any nav item should close the mobile drawer, not leave it
+    // covering whatever tab just opened — one delegated listener instead
+    // of touching each side-link's own onclick.
+    document.getElementById('sidebar-nav').addEventListener('click', (e) => {
+      if (e.target.closest('.side-link')) closeMobileSidebar();
+    });
     showTab('dashboard');
+  }
+
+  function toggleMobileSidebar() {
+    document.getElementById('app-sidebar').classList.toggle('mobile-open');
+    document.getElementById('sidebar-backdrop').classList.toggle('visible');
+  }
+
+  function closeMobileSidebar() {
+    document.getElementById('app-sidebar').classList.remove('mobile-open');
+    document.getElementById('sidebar-backdrop').classList.remove('visible');
   }
 
   function toggleSidebar() {
