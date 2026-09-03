@@ -47,10 +47,14 @@ async def upload_price_list(
     if not file.filename.endswith((".xls", ".xlsx")):
         raise HTTPException(400, "Only .xls or .xlsx files are accepted.")
 
+    # Path(...).name strips any directory components a crafted filename
+    # could carry, so this can never write outside price_list_dir.
+    safe_filename = Path(file.filename).name
+
     # time_ns (not time.time()'s 1-second resolution) so two uploads within
     # the same second — e.g. a double-click — never collide on this unique
     # on-disk name.
-    stored_filename = f"{time.time_ns()}_{file.filename}"
+    stored_filename = f"{time.time_ns()}_{safe_filename}"
     dest = settings.price_list_dir / stored_filename
     with open(dest, "wb") as f:
         content = await file.read()
@@ -67,14 +71,14 @@ async def upload_price_list(
     )
     db.add(PriceListVersion(
         stored_filename=stored_filename,
-        original_filename=file.filename,
+        original_filename=safe_filename,
         uploaded_by_id=current_user.id,
         is_active=True,
         row_count=row_count,
     ))
     db.commit()
 
-    return {"message": f"Price list '{file.filename}' loaded successfully.", "row_count": row_count}
+    return {"message": f"Price list '{safe_filename}' loaded successfully.", "row_count": row_count}
 
 
 @router.post("/activate/{filename}", dependencies=[Depends(require_role("admin"))])

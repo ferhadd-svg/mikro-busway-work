@@ -11,6 +11,8 @@ from app.models.session import UserSession
 from app.services.auth import (
     hash_password, verify_password, create_session, get_session,
     delete_session, require_role,
+    check_login_not_throttled, record_failed_login, clear_failed_logins,
+    _failed_logins, _LOGIN_MAX_ATTEMPTS,
 )
 
 
@@ -115,3 +117,53 @@ def test_require_role_rejects_wrong_role():
     with pytest.raises(HTTPException) as exc_info:
         dep(user=sales)
     assert exc_info.value.status_code == 403
+
+
+# ------------------------------------------------------------------ #
+#  Login throttling                                                    #
+# ------------------------------------------------------------------ #
+
+@pytest.fixture(autouse=True)
+def _reset_login_throttle():
+    """Module-level state — clear it before and after each test so tests
+    can't leak failed-attempt counts into each other."""
+    _failed_logins.clear()
+    yield
+    _failed_logins.clear()
+
+
+def test_check_login_not_throttled_allows_fresh_email():
+    check_login_not_throttled("nobody-tried-this@mikro.local")  # no raise
+
+
+def test_repeated_failures_trip_the_throttle():
+    email = "brute-forced@mikro.local"
+    for _ in range(_LOGIN_MAX_ATTEMPTS):
+        check_login_not_throttled(email)  # still allowed before this failure
+        record_failed_login(email)
+    with pytest.raises(HTTPException) as exc_info:
+        check_login_not_throttled(email)
+    assert exc_info.value.status_code == 429
+
+
+def test_successful_login_clears_the_throttle():
+    email = "recovers@mikro.local"
+    for _ in range(_LOGIN_MAX_ATTEMPTS):
+        record_failed_login(email)
+    clear_failed_logins(email)
+    check_login_not_throttled(email)  # no raise — history was wiped
+
+
+def test_throttle_is_scoped_per_email():
+    victim = "victim@mikro.local"
+    attacker_target = "someone-else@mikro.local"
+    for _ in range(_LOGIN_MAX_ATTEMPTS):
+        record_failed_login(victim)
+    check_login_not_throttled(attacker_target)  # unaffected by victim's failures
+
+
+def test_throttle_key_is_case_and_whitespace_insensitive():
+    for _ in range(_LOGIN_MAX_ATTEMPTS):
+        record_failed_login("Person@Mikro.Local")
+    with pytest.raises(HTTPException):
+        check_login_not_throttled("  person@mikro.local  ")

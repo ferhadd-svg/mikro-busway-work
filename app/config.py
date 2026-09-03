@@ -1,6 +1,8 @@
 from pydantic_settings import BaseSettings
+from pydantic import Field
 from pathlib import Path
 import os
+import secrets
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 _APP_DIR = Path(__file__).resolve().parent
@@ -35,7 +37,11 @@ class Settings(BaseSettings):
     # request (see app/services/auth.py), so secret_key does NOT sign or
     # protect it. It's kept only as a general-purpose app secret for future
     # use (e.g. CSRF tokens), not part of the current auth security boundary.
-    secret_key: str = "dev-insecure-secret-change-me"
+    # Defaults to a fresh random value each process start (rather than a
+    # fixed string) so a forgotten SECRET_KEY env var never ships a
+    # known/guessable secret — safe today since nothing signs anything with
+    # it yet, but set a stable SECRET_KEY env var before that changes.
+    secret_key: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
     session_cookie_name: str = "mikro_session"
     session_lifetime_days: int = 14
     cookie_secure: bool = False   # set True in production once served over HTTPS
@@ -64,8 +70,18 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-if settings.secret_key == "dev-insecure-secret-change-me":
-    print("[startup] WARNING: SECRET_KEY is using the insecure default. Set SECRET_KEY in .env for production.")
+if not os.environ.get("SECRET_KEY"):
+    print(
+        "[startup] NOTE: SECRET_KEY not set — using a random value generated for this "
+        "process (safe for now; nothing signs anything with it). Set a stable SECRET_KEY "
+        "env var before any feature starts trusting it (e.g. CSRF tokens, reset links)."
+    )
+if not settings.cookie_secure:
+    print(
+        "[startup] WARNING: COOKIE_SECURE is False — the session cookie lacks the Secure "
+        "flag. If this app is reachable over HTTPS (it should be in production), set "
+        "COOKIE_SECURE=true so the cookie is never sent over plain HTTP."
+    )
 
 # Ensure data directories exist
 for d in [settings.projects_dir, settings.templates_dir, settings.price_list_dir]:

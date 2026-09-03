@@ -122,13 +122,17 @@ _ALLOWED_DRAWING = (".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff")
 
 
 async def _save_uploaded_drawing(project: Project, file: UploadFile) -> Path:
-    suffix = Path(file.filename).suffix.lower()
+    # Path(...).name strips any directory components a crafted filename
+    # (e.g. "../../app/static/mikro-logo.png") might carry — without it,
+    # any logged-in user could write outside _project_dir(project.id).
+    safe_filename = Path(file.filename).name
+    suffix = Path(safe_filename).suffix.lower()
     if suffix not in _ALLOWED_DRAWING:
         raise HTTPException(400, f"Unsupported file type '{suffix}'. Allowed: {', '.join(_ALLOWED_DRAWING)}")
-    drawing_path = _project_dir(project.id) / file.filename
+    drawing_path = _project_dir(project.id) / safe_filename
     with open(drawing_path, "wb") as f:
         f.write(await file.read())
-    project.drawing_filename = file.filename
+    project.drawing_filename = safe_filename
     return drawing_path
 
 
@@ -518,11 +522,12 @@ def assign_salesperson(project_id: int, sp_id: int, db: Session = Depends(get_db
 async def upload_template(file: UploadFile = File(...)):
     if not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(400, "Only .xlsx or .xls templates accepted.")
-    dest = settings.templates_dir / file.filename
+    safe_filename = Path(file.filename).name
+    dest = settings.templates_dir / safe_filename
     with open(dest, "wb") as f:
         content = await file.read()
         f.write(content)
-    return {"message": f"Template '{file.filename}' uploaded.", "path": str(dest)}
+    return {"message": f"Template '{safe_filename}' uploaded.", "path": str(dest)}
 
 
 # ------------------------------------------------------------------ #

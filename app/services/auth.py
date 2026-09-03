@@ -10,6 +10,7 @@ means signing (e.g. itsdangerous, JWT) is unnecessary here.
 
 import secrets
 import datetime
+import time
 
 import bcrypt
 from fastapi import Depends, HTTPException, Request
@@ -27,6 +28,44 @@ def hash_password(plain: str) -> str:
 
 def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
+
+
+# ------------------------------------------------------------------ #
+#  Login throttling                                                   #
+# ------------------------------------------------------------------ #
+# In-memory (per-process) is enough here: this is a single-instance
+# deployment, and the goal is raising the cost of a brute-force run, not
+# surviving a distributed attack. Resets on restart — acceptable, since a
+# restart already re-seeds a fresh random admin password (see app/seed.py).
+
+_LOGIN_MAX_ATTEMPTS = 5
+_LOGIN_WINDOW_SECONDS = 300  # 5 minutes
+
+_failed_logins: dict[str, list[float]] = {}
+
+
+def _login_throttle_key(email: str) -> str:
+    return email.strip().lower()
+
+
+def check_login_not_throttled(email: str) -> None:
+    """Raise 429 if this email has hit the failed-attempt limit recently."""
+    key = _login_throttle_key(email)
+    attempts = _failed_logins.get(key, [])
+    cutoff = time.time() - _LOGIN_WINDOW_SECONDS
+    attempts = [t for t in attempts if t > cutoff]
+    _failed_logins[key] = attempts
+    if len(attempts) >= _LOGIN_MAX_ATTEMPTS:
+        raise HTTPException(429, "Too many failed login attempts. Try again in a few minutes.")
+
+
+def record_failed_login(email: str) -> None:
+    key = _login_throttle_key(email)
+    _failed_logins.setdefault(key, []).append(time.time())
+
+
+def clear_failed_logins(email: str) -> None:
+    _failed_logins.pop(_login_throttle_key(email), None)
 
 
 def create_session(db: Session, user: User) -> UserSession:

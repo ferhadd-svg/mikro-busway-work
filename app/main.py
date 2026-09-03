@@ -94,7 +94,16 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # allow_origins=["*"] with allow_credentials=True is a well-known bad
+    # combination — Starlette silently reflects the request's Origin header
+    # back instead, effectively allowing any site's credentialed requests.
+    # This app is same-origin in normal use (the browser UI is served by
+    # this same FastAPI app), so an explicit allowlist costs nothing.
+    allow_origins=[
+        settings.public_base_url.rstrip("/"),
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
