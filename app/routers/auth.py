@@ -11,6 +11,7 @@ from app.schemas.user import (
 from app.services.auth import (
     hash_password, verify_password, create_session, delete_session,
     get_current_user, require_role,
+    check_login_not_throttled, record_failed_login, clear_failed_logins,
 )
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -18,12 +19,16 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 @router.post("/login", response_model=UserOut)
 def login(data: LoginRequest, response: Response, db: Session = Depends(get_db)):
+    check_login_not_throttled(data.email)
+
     user = db.query(User).filter(User.email == data.email).first()
     if not user or not verify_password(data.password, user.hashed_password):
+        record_failed_login(data.email)
         raise HTTPException(401, "Invalid email or password.")
     if not user.is_active:
         raise HTTPException(403, "This account has been deactivated.")
 
+    clear_failed_logins(data.email)
     session = create_session(db, user)
     response.set_cookie(
         settings.session_cookie_name,
