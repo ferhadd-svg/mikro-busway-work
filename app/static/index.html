@@ -655,6 +655,13 @@
       .form-grid, .form-grid.three { grid-template-columns: 1fr; }
       .mode-grid { grid-template-columns: 1fr; }
 
+      /* Projects list search+filter row: the status <select> has a fixed
+         width:200px (inline style, sized for desktop) that doesn't fit
+         next to the flex:1 search input on a phone screen — found live
+         while testing (57px of real page overflow). */
+      .filter-row { flex-wrap: wrap; }
+      .filter-row select { width: 100% !important; }
+
       /* Banners / totals wrap cleanly */
       .demo-banner { flex-wrap: wrap; padding: 18px; }
       .btn-demo { margin-left: 0; width: 100%; justify-content: center; }
@@ -676,6 +683,66 @@
       .side-label { display: none; }
       #sidebar-toggle { display: none; }
       .metric-grid { grid-template-columns: 1fr 1fr; }
+
+      /* Directory-style lists (Projects, Customers) — a wide data table
+         squeezed into a phone screen forces sideways scrolling to read
+         columns like Status or Outcome. Restack each row into its own
+         tappable card instead, with the column name as a label before
+         each value (from the td's data-label attribute). Opt-in via the
+         .responsive-cards class rather than applying to every table —
+         the Browse Rates price list table has hundreds of dense rows
+         where this would make scanning worse, not better. */
+      .table-wrap.responsive-cards { overflow-x: visible; border: none; }
+      .table-wrap.responsive-cards table,
+      .table-wrap.responsive-cards tbody,
+      .table-wrap.responsive-cards tr,
+      .table-wrap.responsive-cards td { display: block; width: 100%; }
+      .table-wrap.responsive-cards thead { display: none; }
+      .table-wrap.responsive-cards tr {
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        margin-bottom: 10px;
+        padding: 12px 14px;
+        background: #fff;
+      }
+      .table-wrap.responsive-cards td {
+        border: none;
+        padding: 5px 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        text-align: right;
+      }
+      .table-wrap.responsive-cards td:empty { display: none; }
+      .table-wrap.responsive-cards td[data-label]:not([data-label=""])::before {
+        content: attr(data-label);
+        font-size: .68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: var(--muted);
+        text-align: left;
+      }
+      /* The ref/company name is the card's own heading, not a labeled
+         field alongside its value. */
+      .table-wrap.responsive-cards td:first-child {
+        justify-content: flex-start;
+        font-size: 1rem;
+        padding-bottom: 8px;
+        margin-bottom: 4px;
+        border-bottom: 1px solid var(--border);
+      }
+      /* Must out-rank the [data-label]:not(...) rule above (2 classes + an
+         attribute + a :not() beats 2 classes + :first-child alone) or the
+         label leaks back in — confirmed live before fixing this. */
+      .table-wrap.responsive-cards td[data-label]:first-child::before { content: none !important; }
+      .table-wrap.responsive-cards td:last-child:not(:first-child) {
+        justify-content: flex-end;
+        padding-top: 8px;
+        margin-top: 4px;
+        border-top: 1px solid var(--border);
+      }
     }
 
     @media (max-width: 430px) {
@@ -1030,7 +1097,7 @@
     <div class="card">
       <div class="card-eyebrow">Overview</div>
       <div class="card-heading">All Projects</div>
-      <div style="display:flex; gap:12px; margin-bottom:16px;">
+      <div class="filter-row" style="display:flex; gap:12px; margin-bottom:16px;">
         <input id="proj-search" placeholder="Search by ref or client..." style="flex:1;" oninput="filterProjects()" />
         <select id="proj-status-filter" onchange="filterProjects()" style="width:200px;">
           <option value="">All statuses</option>
@@ -2112,16 +2179,19 @@
         : '';
       return `
       <tr onclick="openProject(${p.id})" style="cursor:pointer;">
-        <td><strong>${p.our_ref}</strong></td>
-        <td>${p.client_name}</td>
-        <td>${p.salesperson_name || '—'}</td>
-        <td><span class="tag s-${p.status}">${p.status.replace(/_/g,' ')}</span></td>
-        <td>${outcomeTag}</td>
-        <td>${new Date(p.updated_at).toLocaleDateString()}</td>
-        <td>${outcomeBtn}</td>
+        <td data-label="Ref"><strong>${p.our_ref}</strong></td>
+        <td data-label="Client">${p.client_name}</td>
+        <td data-label="Salesperson">${p.salesperson_name || '—'}</td>
+        <td data-label="Status"><span class="tag s-${p.status}">${p.status.replace(/_/g,' ')}</span></td>
+        <td data-label="Outcome">${outcomeTag}</td>
+        <td data-label="Updated">${new Date(p.updated_at).toLocaleDateString()}</td>
+        <td data-label="">${outcomeBtn}</td>
       </tr>`;
     }).join('');
-    return `<div class="table-wrap"><table>
+    // responsive-cards: on narrow screens this table restacks into a list
+    // of tappable cards instead of a scroll-sideways-to-read-it table —
+    // see the @media block near the other responsive rules.
+    return `<div class="table-wrap responsive-cards"><table>
       <thead><tr><th>Ref</th><th>Client</th><th>Salesperson</th><th>Status</th><th>Outcome</th><th>Updated</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`;
@@ -2210,12 +2280,13 @@
     }
     const rows = customers.map(c => `
       <tr onclick="showCustomerDetail(${c.id})" style="cursor:pointer;">
-        <td><strong>${c.company_name}</strong></td>
-        <td>${c.primary_contact_name || '—'}</td>
-        <td>${c.project_count}</td>
-        <td><span class="tag" style="background:${c.is_active?'var(--green-light)':'var(--grey-bg)'}; color:${c.is_active?'var(--green)':'var(--muted)'};">${c.is_active?'Active':'Archived'}</span></td>
+        <td data-label="Company"><strong>${c.company_name}</strong></td>
+        <td data-label="Primary Contact">${c.primary_contact_name || '—'}</td>
+        <td data-label="Projects">${c.project_count}</td>
+        <td data-label="Status"><span class="tag" style="background:${c.is_active?'var(--green-light)':'var(--grey-bg)'}; color:${c.is_active?'var(--green)':'var(--muted)'};">${c.is_active?'Active':'Archived'}</span></td>
       </tr>`).join('');
-    return `<div class="table-wrap"><table>
+    // responsive-cards: see renderProjectsTable's comment — same treatment.
+    return `<div class="table-wrap responsive-cards"><table>
       <thead><tr><th>Company</th><th>Primary Contact</th><th>Projects</th><th>Status</th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`;
