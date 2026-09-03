@@ -629,10 +629,23 @@
         margin-left: 0 !important;
         flex-basis: 100%;
         text-align: center;
+        /* Long filenames (e.g. an uploaded price list) otherwise force
+           horizontal page scroll on narrow screens — the base rule's
+           white-space: nowrap has no width limit to stop against there. */
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       /* Layout spacing */
-      main { margin: 16px auto; padding: 0 14px 60px; }
+      /* #app-shell's align-items:flex-start (needed for the desktop row
+         layout) makes flex children shrink-to-fit their content once
+         #app-shell switches to flex-direction:column above — without an
+         explicit width, main balloons to fit its widest descendant (the
+         step-progress bar's min-width:max-content) and the whole page
+         gets a horizontal scrollbar. #app-sidebar already sets width:100%
+         for the same reason; main needs the same treatment. */
+      main { margin: 16px auto; padding: 0 14px 60px; width: 100%; }
       .card { padding: 18px; }
       .card-heading { font-size: 1.12rem; margin-bottom: 18px; }
       .upload-zone { padding: 32px 18px; }
@@ -654,6 +667,12 @@
         border-bottom: 1px solid var(--border); flex-direction: row; overflow-x: auto;
       }
       #app-sidebar.collapsed { width: 100%; }
+      /* #sidebar-nav (the actual icon-button row) has its own separate
+         flex-direction: column from the desktop rule — overriding
+         #app-sidebar above only rearranges its direct children (this nav
+         plus the now-hidden toggle button), so without this the icons
+         still stack into a cramped 44px-wide vertical rail. */
+      #sidebar-nav { flex-direction: row; width: 100%; justify-content: space-around; }
       .side-label { display: none; }
       #sidebar-toggle { display: none; }
       .metric-grid { grid-template-columns: 1fr 1fr; }
