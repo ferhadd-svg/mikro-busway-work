@@ -13,6 +13,7 @@ class UserOut(BaseModel):
     name: str
     role: str
     is_active: bool
+    salesperson_id: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -27,6 +28,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     role: Literal["admin", "sales"] = "sales"
+    salesperson_id: int | None = None
 
 
 class UserUpdate(BaseModel):
@@ -34,6 +36,7 @@ class UserUpdate(BaseModel):
     email: EmailStr | None = None
     role: Literal["admin", "sales"] | None = None
     is_active: bool | None = None
+    salesperson_id: int | None = None
 
 
 class AdminPasswordReset(BaseModel):

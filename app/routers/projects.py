@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.project import Project
 from app.models.salesperson import Salesperson
+from app.models.user import User
 from app.models.customer_contact import CustomerContact
 from app.models.customer_note import CustomerNote
 from app.schemas.project import (
@@ -62,18 +63,28 @@ def _enrich_projects(projects: list[Project], db: Session) -> list[ProjectOut]:
 
 
 @router.get("/", response_model=list[ProjectOut])
-def list_projects(db: Session = Depends(get_db)):
-    projects = db.query(Project).order_by(Project.created_at.desc()).all()
+def list_projects(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    query = db.query(Project)
+    if current_user.role != "admin":
+        query = query.filter(Project.salesperson_id == current_user.salesperson_id)
+    projects = query.order_by(Project.created_at.desc()).all()
     return _enrich_projects(projects, db)
 
 
 @router.post("/", response_model=ProjectOut, status_code=201)
-def create_project(data: ProjectCreate, db: Session = Depends(get_db)):
+def create_project(data: ProjectCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     existing = db.query(Project).filter(Project.our_ref == data.our_ref).first()
     if existing:
         raise HTTPException(400, f"Project ref '{data.our_ref}' already exists.")
+    payload = data.model_dump()
+    # A "sales" account creates projects under their own name only — the
+    # salesperson dropdown in the wizard still shows everyone (useful
+    # context), but only an admin can actually assign a project to someone
+    # else via it.
+    if current_user.role != "admin":
+        payload["salesperson_id"] = current_user.salesperson_id
     customer = get_or_create_customer(db, data.client_name, data.attn)
-    project = Project(**data.model_dump(), customer_id=customer.id)
+    project = Project(**payload, customer_id=customer.id)
     db.add(project)
     db.commit()
     db.refresh(project)
@@ -83,16 +94,20 @@ def create_project(data: ProjectCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
-def get_project(project_id: int, db: Session = Depends(get_db)):
-    return _get_or_404(project_id, db)
+def get_project(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return _get_or_404(project_id, db, current_user)
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)
-def update_project(project_id: int, data: ProjectUpdate, db: Session = Depends(get_db)):
+def update_project(project_id: int, data: ProjectUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Correct Step 1 details after the project exists (typo'd ref, wrong
     client/salesperson). Only the supplied fields change."""
-    project = _get_or_404(project_id, db)
+    project = _get_or_404(project_id, db, current_user)
     fields = data.model_dump(exclude_unset=True)
+    if current_user.role != "admin":
+        # A rep can't hand their own project to someone else — reassignment
+        # is an admin action (see assign_salesperson below).
+        fields.pop("salesperson_id", None)
 
     new_ref = fields.get("our_ref")
     if new_ref and new_ref != project.our_ref:
@@ -158,11 +173,11 @@ def _read_and_store(project: Project, drawing_path: Path, pages: list[int] | Non
 
 
 @router.post("/{project_id}/drawing/preview")
-async def preview_drawing(project_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def preview_drawing(project_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Save the uploaded drawing and, for multi-page PDFs, return page
     thumbnails so the user can pick which sheet holds the busduct SLD. Does
     NOT call the AI."""
-    project = _get_or_404(project_id, db)
+    project = _get_or_404(project_id, db, current_user)
     drawing_path = await _save_uploaded_drawing(project, file)
     db.commit()
     if drawing_path.suffix.lower() == ".pdf":
@@ -179,9 +194,9 @@ async def preview_drawing(project_id: int, file: UploadFile = File(...), db: Ses
 
 
 @router.post("/{project_id}/drawing/read")
-def read_saved_drawing(project_id: int, data: DrawingReadRequest, db: Session = Depends(get_db)):
+def read_saved_drawing(project_id: int, data: DrawingReadRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Run the AI read on the already-previewed drawing for the chosen pages."""
-    project = _get_or_404(project_id, db)
+    project = _get_or_404(project_id, db, current_user)
     if not project.drawing_filename:
         raise HTTPException(400, "No drawing uploaded yet — upload one first.")
     drawing_path = _project_dir(project_id) / project.drawing_filename
@@ -191,10 +206,10 @@ def read_saved_drawing(project_id: int, data: DrawingReadRequest, db: Session = 
 
 
 @router.post("/{project_id}/drawing")
-async def upload_drawing(project_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_drawing(project_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Single-call upload+read (kept for images / direct use). The wizard uses
     preview + read so it can offer a page picker."""
-    project = _get_or_404(project_id, db)
+    project = _get_or_404(project_id, db, current_user)
     drawing_path = await _save_uploaded_drawing(project, file)
     return _read_and_store(project, drawing_path, None, db)
 
@@ -208,6 +223,7 @@ def submit_runs_manually(
     project_id: int,
     runs: list[dict],
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Submit busway run data manually (no drawing / no Claude needed).
@@ -217,7 +233,7 @@ def submit_runs_manually(
     from app.services.price_list import resolve_frame_rating
     from app.schemas.boq import BusRun
 
-    project = _get_or_404(project_id, db)
+    project = _get_or_404(project_id, db, current_user)
 
     validated_runs = []
     for i, r in enumerate(runs):
@@ -254,8 +270,8 @@ def submit_runs_manually(
 # ------------------------------------------------------------------ #
 
 @router.get("/{project_id}/flags")
-def get_flags(project_id: int, db: Session = Depends(get_db)):
-    project = _get_or_404(project_id, db)
+def get_flags(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    project = _get_or_404(project_id, db, current_user)
     if not project.drawing_extraction_json:
         raise HTTPException(400, "No drawing has been uploaded and read for this project yet.")
     extraction = DrawingExtraction.model_validate_json(project.drawing_extraction_json)
@@ -286,8 +302,8 @@ def get_flags(project_id: int, db: Session = Depends(get_db)):
 # ------------------------------------------------------------------ #
 
 @router.post("/{project_id}/flags")
-def submit_flags(project_id: int, answers: FlagAnswers, db: Session = Depends(get_db)):
-    project = _get_or_404(project_id, db)
+def submit_flags(project_id: int, answers: FlagAnswers, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    project = _get_or_404(project_id, db, current_user)
     if project.status not in ("flags_pending", "flags_confirmed"):
         raise HTTPException(400, f"Project is in status '{project.status}'. Upload a drawing first.")
 
@@ -305,8 +321,8 @@ def submit_flags(project_id: int, answers: FlagAnswers, db: Session = Depends(ge
 # ------------------------------------------------------------------ #
 
 @router.post("/{project_id}/generate-boq", response_model=BOQResponse)
-def generate_boq(project_id: int, db: Session = Depends(get_db)):
-    project = _get_or_404(project_id, db)
+def generate_boq(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    project = _get_or_404(project_id, db, current_user)
     _require_status(project, ("flags_confirmed", "boq_ready", "quotation_ready"))
     _require_price_list()
 
@@ -327,8 +343,8 @@ def generate_boq(project_id: int, db: Session = Depends(get_db)):
 # ------------------------------------------------------------------ #
 
 @router.post("/{project_id}/generate-quotation")
-def generate_quotation(project_id: int, db: Session = Depends(get_db)):
-    project = _get_or_404(project_id, db)
+def generate_quotation(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    project = _get_or_404(project_id, db, current_user)
     _require_status(project, ("boq_ready", "quotation_ready"))
     _require_price_list()
 
@@ -381,8 +397,8 @@ def generate_quotation(project_id: int, db: Session = Depends(get_db)):
 # ------------------------------------------------------------------ #
 
 @router.patch("/{project_id}/outcome", response_model=ProjectOut)
-def set_project_outcome(project_id: int, data: ProjectOutcomeUpdate, db: Session = Depends(get_db)):
-    project = _get_or_404(project_id, db)
+def set_project_outcome(project_id: int, data: ProjectOutcomeUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    project = _get_or_404(project_id, db, current_user)
     _require_status(project, ("quotation_ready",))
     apply_outcome(project, data)
     db.commit()
@@ -394,8 +410,8 @@ def set_project_outcome(project_id: int, data: ProjectOutcomeUpdate, db: Session
 # ------------------------------------------------------------------ #
 
 @router.get("/{project_id}/download/boq")
-def download_boq(project_id: int, db: Session = Depends(get_db)):
-    project = _get_or_404(project_id, db)
+def download_boq(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    project = _get_or_404(project_id, db, current_user)
     if not project.boq_filename:
         raise HTTPException(404, "BOQ not generated yet.")
     path = settings.projects_dir / project.boq_filename
@@ -409,8 +425,8 @@ def download_boq(project_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{project_id}/download/quotation")
-def download_quotation(project_id: int, db: Session = Depends(get_db)):
-    project = _get_or_404(project_id, db)
+def download_quotation(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    project = _get_or_404(project_id, db, current_user)
     if not project.quotation_filename:
         raise HTTPException(404, "Quotation not generated yet.")
     path = settings.projects_dir / project.quotation_filename
@@ -428,10 +444,10 @@ def download_quotation(project_id: int, db: Session = Depends(get_db)):
 # ------------------------------------------------------------------ #
 
 @router.get("/{project_id}/email-recipients")
-def get_email_recipients(project_id: int, db: Session = Depends(get_db)):
+def get_email_recipients(project_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Suggested recipients so the UI can prefill the To field — ProjectOut
     carries no emails. Primary contact is returned first (ordered)."""
-    project = _get_or_404(project_id, db)
+    project = _get_or_404(project_id, db, current_user)
     sp = db.get(Salesperson, project.salesperson_id) if project.salesperson_id else None
     contacts = []
     if project.customer_id:
@@ -453,8 +469,8 @@ def get_email_recipients(project_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{project_id}/email-quotation")
-def email_quotation(project_id: int, data: EmailQuotationRequest, db: Session = Depends(get_db)):
-    project = _get_or_404(project_id, db)
+def email_quotation(project_id: int, data: EmailQuotationRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    project = _get_or_404(project_id, db, current_user)
     _require_status(project, ("quotation_ready",))
     if not project.quotation_filename:
         raise HTTPException(404, "Quotation not generated yet.")
@@ -502,9 +518,9 @@ def email_quotation(project_id: int, data: EmailQuotationRequest, db: Session = 
 #  Salesperson assignment                                             #
 # ------------------------------------------------------------------ #
 
-@router.patch("/{project_id}/assign-salesperson/{sp_id}", response_model=ProjectOut)
-def assign_salesperson(project_id: int, sp_id: int, db: Session = Depends(get_db)):
-    project = _get_or_404(project_id, db)
+@router.patch("/{project_id}/assign-salesperson/{sp_id}", response_model=ProjectOut, dependencies=[Depends(require_role("admin"))])
+def assign_salesperson(project_id: int, sp_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    project = _get_or_404(project_id, db, current_user)
     sp = db.get(Salesperson, sp_id)
     if not sp:
         raise HTTPException(404, "Salesperson not found.")
@@ -534,10 +550,12 @@ async def upload_template(file: UploadFile = File(...)):
 #  Helpers                                                            #
 # ------------------------------------------------------------------ #
 
-def _get_or_404(project_id: int, db: Session) -> Project:
+def _get_or_404(project_id: int, db: Session, current_user: User) -> Project:
     project = db.get(Project, project_id)
     if not project:
         raise HTTPException(404, f"Project {project_id} not found.")
+    if current_user.role != "admin" and project.salesperson_id != current_user.salesperson_id:
+        raise HTTPException(403, "You don't have access to this project.")
     return project
 
 

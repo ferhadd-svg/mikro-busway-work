@@ -1379,6 +1379,12 @@
             </select>
           </div>
           <div class="form-group">
+            <label>Salesperson <span style="color:var(--muted); font-weight:400;">(scopes which projects/customers a Sales account can see)</span></label>
+            <select id="edit-user-salesperson">
+              <option value="">— none —</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label>Reset password (leave blank to keep current)</label>
             <input id="edit-user-password" type="password" placeholder="At least 8 characters" />
           </div>
@@ -1410,6 +1416,12 @@
           <select id="user-role-input">
             <option value="sales">Sales</option>
             <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Salesperson <span style="color:var(--muted); font-weight:400;">(scopes which projects/customers a Sales account can see)</span></label>
+          <select id="user-salesperson-input">
+            <option value="">— none —</option>
           </select>
         </div>
       </div>
@@ -1774,6 +1786,16 @@
       const sel = document.getElementById('salesperson-id');
       sel.innerHTML = '<option value="">— select —</option>' +
         list.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+      // A "sales" account's projects always get assigned to them server-side
+      // regardless of what's picked here (see create_project) — lock the
+      // field to their own name instead of showing a selection that would
+      // silently be overridden.
+      if (currentUser && currentUser.role !== 'admin' && currentUser.salesperson_id) {
+        sel.value = String(currentUser.salesperson_id);
+        sel.disabled = true;
+      } else {
+        sel.disabled = false;
+      }
     } catch(e) {}
   }
 
@@ -2601,6 +2623,11 @@
           <td><span class="tag" style="background:${s.is_active?'var(--green-light)':'var(--grey-bg)'}; color:${s.is_active?'var(--green)':'var(--muted)'};">${s.is_active?'Active':'Inactive'}</span></td>
         </tr>`).join('')}</tbody>
       </table></div>`;
+      const options = '<option value="">— none —</option>' + list.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+      ['edit-user-salesperson', 'user-salesperson-input'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (sel) sel.innerHTML = options;
+      });
     } catch(e) { el.innerHTML = `<div class="alert alert-error">Error: ${e.message}</div>`; }
   }
 
@@ -2654,6 +2681,7 @@
     document.getElementById('edit-user-name').value = u.name;
     document.getElementById('edit-user-email').value = u.email;
     document.getElementById('edit-user-role').value = u.role;
+    document.getElementById('edit-user-salesperson').value = u.salesperson_id || '';
     document.getElementById('edit-user-password').value = '';
     document.getElementById('edit-user-message').textContent = '';
     document.getElementById('user-edit-panel').style.display = 'block';
@@ -2668,6 +2696,8 @@
     const name = document.getElementById('edit-user-name').value.trim();
     const email = document.getElementById('edit-user-email').value.trim();
     const role = document.getElementById('edit-user-role').value;
+    const spValue = document.getElementById('edit-user-salesperson').value;
+    const salesperson_id = spValue ? parseInt(spValue) : null;
     const newPassword = document.getElementById('edit-user-password').value;
     const msgEl = document.getElementById('edit-user-message');
     msgEl.style.color = 'var(--red)';
@@ -2675,7 +2705,7 @@
     if (!name || !email) { msgEl.textContent = 'Name and email are required.'; return; }
     if (newPassword && newPassword.length < 8) { msgEl.textContent = 'New password must be at least 8 characters.'; return; }
     try {
-      await api('PATCH', `/auth/users/${id}`, { name, email, role });
+      await api('PATCH', `/auth/users/${id}`, { name, email, role, salesperson_id });
       if (newPassword) {
         await api('POST', `/auth/users/${id}/reset-password`, { new_password: newPassword });
       }
@@ -2690,11 +2720,14 @@
     const email = document.getElementById('user-email-input').value.trim();
     const password = document.getElementById('user-password-input').value;
     const role = document.getElementById('user-role-input').value;
+    const spValue = document.getElementById('user-salesperson-input').value;
+    const salesperson_id = spValue ? parseInt(spValue) : null;
     if (!name || !email || !password) { alert_('error', 'Name, email, and password are required.'); return; }
     if (password.length < 8) { alert_('error', 'Password must be at least 8 characters.'); return; }
     try {
-      await api('POST', '/auth/users', { name, email, password, role });
+      await api('POST', '/auth/users', { name, email, password, role, salesperson_id });
       ['user-name-input','user-email-input','user-password-input'].forEach(id => document.getElementById(id).value='');
+      document.getElementById('user-salesperson-input').value = '';
       await loadUsersAdmin();
       alert_('success', `${name}'s account was created. Share their password with them securely.`);
     } catch(e) { alert_('error', e.message); }
