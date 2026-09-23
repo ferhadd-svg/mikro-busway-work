@@ -31,7 +31,7 @@ from app.schemas.project import (
 from app.schemas.boq import DrawingExtraction, FlagAnswers, BOQResponse
 from app.services.drawing_reader import read_drawing, pdf_page_thumbnails
 from app.services.price_list import price_list
-from app.services.boq_builder import build_boq
+from app.services.boq_builder import build_boq, RunOverrideError
 from app.services.quotation_builder import build_quotation
 from app.services.auth import get_current_user, require_role
 from app.services.customers import get_or_create_customer
@@ -329,7 +329,10 @@ def generate_boq(project_id: int, db: Session = Depends(get_db), current_user: U
     extraction = DrawingExtraction.model_validate_json(project.drawing_extraction_json)
     flags = FlagAnswers.model_validate_json(project.flags_json)
 
-    result = build_boq(extraction, flags, project.our_ref, project.client_name)
+    try:
+        result = build_boq(extraction, flags, project.our_ref, project.client_name)
+    except RunOverrideError as e:
+        raise HTTPException(400, str(e))
 
     project.boq_filename = Path(result.boq_file).name
     project.status = "boq_ready"
@@ -360,7 +363,10 @@ def generate_quotation(project_id: int, db: Session = Depends(get_db), current_u
 
     # Re-build BOQ runs (reuse boq_builder logic without writing Excel again)
     from app.services.boq_builder import build_boq as _build_boq
-    boq = _build_boq(extraction, flags, project.our_ref, project.client_name)
+    try:
+        boq = _build_boq(extraction, flags, project.our_ref, project.client_name)
+    except RunOverrideError as e:
+        raise HTTPException(400, str(e))
 
     # Find the salesperson's quotation template (uploaded copy wins; else the
     # bundled one shipped with the app so a fresh deploy still has it).

@@ -1,6 +1,61 @@
+import pytest
+from pydantic import ValidationError
+
 from app.schemas.boq import BusRun, DrawingExtraction, FlagAnswers
-from app.services.boq_builder import build_boq
+from app.services.boq_builder import build_boq, RunOverrideError
 from app.services.price_list import resolve_frame_rating
+
+
+def _valid_run_kwargs(**overrides):
+    base = dict(
+        run_id="R1", run_type="TX-MSB", rating_a=800, frame_rating_a=800,
+        material="AL", earth_pct=50, routing="FROM TX TO MSB",
+    )
+    return {**base, **overrides}
+
+
+# ------------------------------------------------------------------ #
+#  Schema-level constraints — the same bounds that make run_overrides  #
+#  safe also apply to every other way a BusRun gets constructed (AI    #
+#  extraction, manual entry), so a bad value is rejected at the door   #
+#  everywhere, not just in the override path.                         #
+# ------------------------------------------------------------------ #
+
+@pytest.mark.parametrize("field,bad_value", [
+    ("rating_a", 0),
+    ("rating_a", -800),
+    ("frame_rating_a", 0),
+    ("hanger_spacing_m", 0),
+    ("hanger_spacing_m", -1.5),
+    ("spare_openings", -1),
+    ("length_m", -5.0),
+])
+def test_busrun_rejects_invalid_field(field, bad_value):
+    with pytest.raises(ValidationError):
+        BusRun(**_valid_run_kwargs(**{field: bad_value}))
+
+
+def test_busrun_accepts_zero_length_and_zero_spare_openings():
+    """0 is a legitimate value for these two — only negative should fail."""
+    run = BusRun(**_valid_run_kwargs(length_m=0.0, spare_openings=0))
+    assert run.length_m == 0.0
+    assert run.spare_openings == 0
+
+
+def test_busrun_rejects_non_positive_piu_rating():
+    with pytest.raises(ValidationError):
+        BusRun(**_valid_run_kwargs(piu_ratings=[100, -50]))
+
+
+@pytest.mark.parametrize("field,bad_value", [
+    ("lme_usd_per_mt", 0),
+    ("lme_usd_per_mt", -2600.0),
+    ("usd_to_myr", 0),
+    ("piu_ka", 40),  # not one of the three real tiers (26/36/50)
+])
+def test_flag_answers_rejects_invalid_field(field, bad_value):
+    with pytest.raises(ValidationError):
+        FlagAnswers(**{**dict(lme_usd_per_mt=2600.0, usd_to_myr=4.45), field: bad_value})
 
 
 def _extraction():
@@ -36,6 +91,80 @@ def test_frame_rating_override_is_respected_when_explicitly_given():
 def test_no_override_keeps_original_frame_rating():
     boq = build_boq(_extraction(), _flags(), our_ref="Q-1", client_name="ACME")
     assert boq.runs[0].frame_rating_a == resolve_frame_rating(300)
+
+
+# ------------------------------------------------------------------ #
+#  run_overrides validation — a cleared/malformed frontend field must  #
+#  raise a clean, catchable error, not crash resolve_frame_rating with #
+#  a raw TypeError (confirmed live: resolve_frame_rating(None) raises  #
+#  "'<=' not supported between instances of 'NoneType' and 'int'")     #
+# ------------------------------------------------------------------ #
+
+def test_null_rating_a_override_raises_clean_error_instead_of_crashing():
+    """Clearing the Rating (A) field in the Confirm Flags Edit panel sends
+    rating_a: null (JSON.stringify(NaN) === 'null'). Previously this
+    reached resolve_frame_rating(None) unguarded and raised a raw
+    TypeError — an opaque 500 instead of an actionable message."""
+    with pytest.raises(RunOverrideError, match="R1"):
+        build_boq(_extraction(), _flags({"R1": {"rating_a": None}}), our_ref="Q-1", client_name="ACME")
+
+
+def test_negative_rating_a_override_is_rejected():
+    with pytest.raises(RunOverrideError):
+        build_boq(_extraction(), _flags({"R1": {"rating_a": -800}}), our_ref="Q-1", client_name="ACME")
+
+
+def test_non_numeric_rating_a_override_is_rejected():
+    with pytest.raises(RunOverrideError):
+        build_boq(_extraction(), _flags({"R1": {"rating_a": "abc"}}), our_ref="Q-1", client_name="ACME")
+
+
+def test_invalid_material_override_is_rejected():
+    """model_copy(update=...) alone would silently accept this — it skips
+    validation. Re-validating the merged model afterwards is what actually
+    catches it."""
+    with pytest.raises(RunOverrideError):
+        build_boq(_extraction(), _flags({"R1": {"material": "XX"}}), our_ref="Q-1", client_name="ACME")
+
+
+def test_invalid_earth_pct_override_is_rejected():
+    with pytest.raises(RunOverrideError):
+        build_boq(_extraction(), _flags({"R1": {"earth_pct": 75}}), our_ref="Q-1", client_name="ACME")
+
+
+def test_zero_hanger_spacing_override_is_rejected_not_a_zerodivisionerror():
+    with pytest.raises(RunOverrideError):
+        build_boq(_extraction(), _flags({"R1": {"hanger_spacing_m": 0}}), our_ref="Q-1", client_name="ACME")
+
+
+def test_valid_override_still_applies_normally():
+    """Regression check: the validation pass must not reject legitimate
+    overrides, only bad ones."""
+    boq = build_boq(_extraction(), _flags({"R1": {"routing": "FROM TX TO MSB-2"}}), our_ref="Q-1", client_name="ACME")
+    assert boq.runs[0].routing == "FROM TX TO MSB-2"
+
+
+# ------------------------------------------------------------------ #
+#  Missing price-list rate -> warning, not a silent RM 0              #
+# ------------------------------------------------------------------ #
+
+def test_missing_rate_is_surfaced_as_a_warning(monkeypatch):
+    from app.services import price_list as price_list_module
+    monkeypatch.setattr(price_list_module.price_list, "feeder", lambda *a, **k: 0.0)
+    boq = build_boq(_extraction(), _flags(), our_ref="Q-1", client_name="ACME")
+    assert any("FEEDER" in w or "R1" in w for w in boq.warnings)
+
+
+def test_no_warnings_when_all_rates_found(monkeypatch):
+    """The price_list singleton has no file loaded in this test process by
+    default, so every real lookup method normally returns 0.0 — deterministic
+    here means mocking every rate this run's items touch to a real value,
+    not relying on whatever the singleton's ambient state happens to be."""
+    from app.services import price_list as price_list_module
+    for method in ("feeder", "flange_end", "elbow", "vertical_elbow", "flexible_conductor", "mounting_clamp", "bimetal"):
+        monkeypatch.setattr(price_list_module.price_list, method, lambda *a, **k: 99.0)
+    boq = build_boq(_extraction(), _flags(), our_ref="Q-1", client_name="ACME")
+    assert boq.warnings == []
 
 
 # ------------------------------------------------------------------ #

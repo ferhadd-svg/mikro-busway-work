@@ -1969,7 +1969,7 @@
             </div>
             <div>
               <label>Rating (A)</label>
-              <input class="run-edit-input" type="number" data-run="${r.run_id}" data-field="rating_a" value="${eff.rating_a}" onchange="onRunFieldChange(this)" />
+              <input class="run-edit-input" type="number" min="1" data-run="${r.run_id}" data-field="rating_a" value="${eff.rating_a}" onchange="onRunFieldChange(this)" />
               <div style="color:var(--muted); font-size:.72rem; margin-top:4px;">${r.frame_rating_a}A frame (auto)</div>
             </div>
             <div>
@@ -2023,7 +2023,17 @@
     const original = (extractionData?.extraction?.runs||[]).find(r => r.run_id === runId);
     if (!original) return;
     let val = el.value;
-    if (['rating_a','earth_pct'].includes(field)) val = parseInt(val);
+    if (['rating_a','earth_pct'].includes(field)) {
+      val = parseInt(val);
+      // A cleared/non-numeric field parses to NaN, which JSON.stringify
+      // silently turns into null over the wire — reject it here instead
+      // of sending a value the server would otherwise have to catch.
+      if (isNaN(val) || val <= 0) {
+        alert_('error', `${field === 'rating_a' ? 'Rating' : 'Earth %'} must be a positive number.`);
+        el.value = original[field];
+        return;
+      }
+    }
     if (field === 'length_m') val = val === '' ? null : parseFloat(val);
     if (field === 'piu_ratings') val = val.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
 
@@ -2092,7 +2102,17 @@
       const sst   = Math.round(boq.subtotal_myr * 0.10);
       const grand = Math.round(boq.subtotal_myr + sst);
 
+      const warningsHtml = (boq.warnings && boq.warnings.length)
+        ? `<div class="alert alert-error" style="margin-bottom:16px;">
+            <strong>${boq.warnings.length} item${boq.warnings.length > 1 ? 's' : ''} priced at RM 0</strong> — the loaded price list has no matching rate.
+            <ul style="margin:6px 0 0; padding-left:18px;">
+              ${boq.warnings.map(w => `<li>${w}</li>`).join('')}
+            </ul>
+          </div>`
+        : '';
+
       document.getElementById('boq-content').innerHTML = `
+        ${warningsHtml}
         ${runsHtml}
         <div class="totals-block">
           <div class="total-row"><span>Sub-Total</span><span>RM ${Math.round(boq.subtotal_myr).toLocaleString()}</span></div>
