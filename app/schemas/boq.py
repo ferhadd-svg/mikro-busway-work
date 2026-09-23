@@ -1,22 +1,26 @@
-from pydantic import BaseModel
-from typing import Literal
+from pydantic import BaseModel, Field
+from typing import Annotated, Literal
+
+PositiveInt = Annotated[int, Field(gt=0)]
 
 
 class BusRun(BaseModel):
     run_id: str
     run_type: Literal["TX-MSB", "MSB-Riser", "RISER"]
-    rating_a: int
-    frame_rating_a: int
+    rating_a: int = Field(gt=0)
+    frame_rating_a: int = Field(gt=0)
     material: Literal["AL", "CU"]
     earth_pct: Literal[50, 100]
     routing: str
     phases: str = "3P4W"
-    length_m: float | None = None
-    hanger_spacing_m: float = 1.5
-    num_fixed_hangers: int | None = None
-    num_spring_hangers: int | None = None
-    piu_ratings: list[int] = []
-    spare_openings: int = 0
+    length_m: float | None = Field(default=None, ge=0)
+    # gt=0, not ge=0: this is a divisor in boq_builder._calc_hangers — a
+    # zero value would raise ZeroDivisionError instead of a clean 400.
+    hanger_spacing_m: float = Field(default=1.5, gt=0)
+    num_fixed_hangers: int | None = Field(default=None, ge=0)
+    num_spring_hangers: int | None = Field(default=None, ge=0)
+    piu_ratings: list[PositiveInt] = []
+    spare_openings: int = Field(default=0, ge=0)
     needs_bimetal: bool = False
     flags: list[str] = []
 
@@ -28,9 +32,14 @@ class DrawingExtraction(BaseModel):
 
 
 class FlagAnswers(BaseModel):
-    lme_usd_per_mt: float
-    usd_to_myr: float
-    piu_ka: int = 26
+    # gt=0 here is about protecting the quotation's own disclaimer text
+    # ("LME Aluminium @USD {lme_usd_per_mt}/MT") from a nonsensical value —
+    # these two numbers are never used in the actual pricing math, only
+    # quoted back to the client, but a negative or zero rate would still
+    # look broken on a document going out the door.
+    lme_usd_per_mt: float = Field(gt=0)
+    usd_to_myr: float = Field(gt=0)
+    piu_ka: Literal[26, 36, 50] = 26
     run_overrides: dict[str, dict] = {}
 
 
@@ -68,3 +77,10 @@ class BOQResponse(BaseModel):
     runs: list[BOQRun]
     subtotal_myr: float
     boq_file: str
+    # Populated when a real (non-subheader, non-excluded) line item's rate
+    # lookup came back empty — the price list has no entry for that
+    # frame/rating/material combination. The BOQ still generates (a
+    # salesperson needs to see it to know what's missing) but this item
+    # is silently priced at RM 0 unless someone notices — surfaced here so
+    # the UI can flag it instead of that happening invisibly.
+    warnings: list[str] = []

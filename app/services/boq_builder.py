@@ -19,12 +19,47 @@ from pathlib import Path
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
+from pydantic import ValidationError
 
 from app.schemas.boq import (
     BusRun, DrawingExtraction, FlagAnswers, BOQLineItem, BOQRun, BOQResponse
 )
 from app.services.price_list import price_list, resolve_frame_rating
 from app.config import settings
+
+
+class RunOverrideError(ValueError):
+    """A run_overrides value failed validation. Raised instead of letting a
+    bad override crash further down — e.g. a cleared "Rating (A)" field in
+    the Confirm Flags Edit panel sends rating_a: null, and
+    resolve_frame_rating(None) would otherwise raise a raw, unhandled
+    TypeError instead of a clean 400. The router maps this to HTTPException
+    400 rather than an opaque 500."""
+
+
+def _apply_run_override(run: BusRun, overrides: dict) -> BusRun:
+    """Merge run_overrides into `run`, re-validated as a whole BusRun.
+
+    model_copy(update=...) — the obvious way to apply a partial-update
+    dict — does NOT re-run Pydantic validation, so it was previously
+    possible for a client (or a frontend bug) to smuggle in a null,
+    negative, or otherwise nonsensical value that Pydantic would reject on
+    normal construction. Re-validating via model_validate(...model_dump())
+    closes that gap for every field at once, including ones added later."""
+    if not overrides:
+        return run
+    if "rating_a" in overrides and "frame_rating_a" not in overrides:
+        rating_a = overrides["rating_a"]
+        if not isinstance(rating_a, (int, float)) or isinstance(rating_a, bool) or rating_a <= 0:
+            raise RunOverrideError(
+                f"Run {run.run_id}: rating_a override must be a positive number, got {rating_a!r}."
+            )
+        overrides = {**overrides, "frame_rating_a": resolve_frame_rating(rating_a)}
+    try:
+        updated = run.model_copy(update=overrides)
+        return BusRun.model_validate(updated.model_dump())
+    except ValidationError as e:
+        raise RunOverrideError(f"Run {run.run_id}: invalid override — {e}") from e
 
 
 # ------------------------------------------------------------------ #
@@ -223,10 +258,7 @@ def build_boq(
     for run in extraction.runs:
         # Apply any per-run overrides from flag answers
         overrides = flags.run_overrides.get(run.run_id, {})
-        if overrides:
-            if "rating_a" in overrides and "frame_rating_a" not in overrides:
-                overrides = {**overrides, "frame_rating_a": resolve_frame_rating(overrides["rating_a"])}
-            run = run.model_copy(update=overrides)
+        run = _apply_run_override(run, overrides)
 
         if run.run_type == "TX-MSB":
             items = _build_tx_msb(run)
@@ -255,6 +287,15 @@ def build_boq(
         for item in (r.items + r.piu_items)
     )
 
+    warnings = [
+        f"{r.run_id}: '{item.description}' has no matching rate in the loaded "
+        f"price list — priced at RM 0. Check the price list covers "
+        f"{r.frame_rating_a}A {r.material}."
+        for r in boq_runs
+        for item in (r.items + r.piu_items)
+        if not item.is_subheader and not item.is_excluded and item.unit_rate_myr == 0
+    ]
+
     boq_file = _write_boq_excel(boq_runs, our_ref, client_name, subtotal)
 
     return BOQResponse(
@@ -262,6 +303,7 @@ def build_boq(
         runs=boq_runs,
         subtotal_myr=subtotal,
         boq_file=str(boq_file),
+        warnings=warnings,
     )
 
 
