@@ -103,3 +103,35 @@ def test_page_thumbnails_hints_match_real_page_content(tmp_path):
 
     total, thumbs, hints = dr.pdf_page_thumbnails(pdf)
     assert hints == ["unlikely", "likely"]
+
+
+def test_large_sheet_render_is_capped(tmp_path):
+    """An A0 sheet at 220 DPI is ~10300 px — enough to OOM a 512 MB instance.
+    The render must be capped at _MAX_RENDER_PX on the long edge."""
+    import pymupdf as fitz
+    from PIL import Image
+    from app.services import drawing_reader as dr
+
+    pdf = tmp_path / "a0.pdf"
+    doc = fitz.open()
+    doc.new_page(width=3370, height=2384)  # A0 landscape in points
+    doc.save(pdf)
+    doc.close()
+
+    paths, _ = dr._pdf_to_images(pdf, pages=[1])
+    assert max(Image.open(paths[0]).size) <= dr._MAX_RENDER_PX
+
+
+def test_small_sheet_keeps_full_dpi(tmp_path):
+    import pymupdf as fitz
+    from PIL import Image
+    from app.services import drawing_reader as dr
+
+    pdf = tmp_path / "a3.pdf"
+    doc = fitz.open()
+    doc.new_page(width=1191, height=842)  # A3 landscape
+    doc.save(pdf)
+    doc.close()
+
+    paths, _ = dr._pdf_to_images(pdf, pages=[1])
+    assert abs(Image.open(paths[0]).size[0] - 1191 * 220 / 72) <= 1

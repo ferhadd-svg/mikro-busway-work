@@ -109,8 +109,66 @@ Respond with ONLY a JSON object — no markdown fences, no commentary. Schema:
 }"""
 
 
+def _nullable(schema: dict) -> dict:
+    return {"anyOf": [schema, {"type": "null"}]}
+
+
+# Structured-output schema: the API guarantees the reply is JSON matching
+# this, so a read can no longer fail with "could not turn this drawing into
+# structured data". Values are still normalised by _normalise_run (frame
+# rating recomputed locally, earth snapped, etc.).
+EXTRACTION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "runs": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "run_id": {"type": "string"},
+                    "run_type": {"type": "string", "enum": ["TX-MSB", "MSB-Riser", "RISER"]},
+                    "rating_a": _nullable({"type": "integer"}),
+                    "frame_rating_a": _nullable({"type": "integer"}),
+                    "material": {"type": "string", "enum": ["AL", "CU"]},
+                    "earth_pct": {"type": "integer", "enum": [50, 100]},
+                    "routing": {"type": "string"},
+                    "phases": {"type": "string", "enum": ["3P4W", "3P5W"]},
+                    "length_m": _nullable({"type": "number"}),
+                    "hanger_spacing_m": {"type": "number"},
+                    "num_fixed_hangers": _nullable({"type": "integer"}),
+                    "num_spring_hangers": _nullable({"type": "integer"}),
+                    "piu_ratings": {"type": "array", "items": {"type": "integer"}},
+                    "spare_openings": {"type": "integer"},
+                    "needs_bimetal": {"type": "boolean"},
+                    "flags": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": [
+                    "run_id", "run_type", "rating_a", "frame_rating_a", "material",
+                    "earth_pct", "routing", "phases", "length_m", "hanger_spacing_m",
+                    "num_fixed_hangers", "num_spring_hangers", "piu_ratings",
+                    "spare_openings", "needs_bimetal", "flags",
+                ],
+                "additionalProperties": False,
+            },
+        },
+        "global_flags": {"type": "array", "items": {"type": "string"}},
+        "raw_notes": {"type": "string"},
+    },
+    "required": ["runs", "global_flags", "raw_notes"],
+    "additionalProperties": False,
+}
+
+
 # When no pages are chosen (legacy single-call path), read up to this many.
 MAX_PDF_PAGES = 4
+# Render PDFs at up to this DPI, but never past this many pixels on the long
+# edge. At 220 DPI an A1 sheet is ~7300 px (peaks ~330 MB while tiling) and an
+# A0 ~10300 px — enough to run Render's 512 MB free instance out of memory,
+# killing the read mid-way. Nothing is lost by the cap: the tile grid (at most
+# _MAX_TILES tiles) is downscaled by the model to ~1568 px per tile anyway, so
+# ~7500 px is already the most detail that reaches it.
+_RENDER_DPI = 220
+_MAX_RENDER_PX = 7500
 # Cap how many page thumbnails the picker renders (bounds a huge tender set).
 MAX_THUMBNAIL_PAGES = 40
 
@@ -179,9 +237,11 @@ def _pdf_to_images(
         for i in indices:
             page = doc.load_page(i)
             # PDFs default to 72 DPI; render at ~220 DPI so small busduct/ACB
-            # labels survive. The page is tiled afterwards, so a big raster is
-            # fine — it is never sent to the model whole at this size.
-            pix = page.get_pixmap(matrix=fitz.Matrix(220 / 72, 220 / 72))
+            # labels survive, capped for large sheets (see _MAX_RENDER_PX).
+            # The page is tiled afterwards — never sent to the model whole.
+            long_edge_pt = max(page.rect.width, page.rect.height) or 1
+            zoom = min(_RENDER_DPI / 72, _MAX_RENDER_PX / long_edge_pt)
+            pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
             out_path = pdf_path.with_name(f"{pdf_path.stem}_p{i + 1}.png")
             pix.save(str(out_path))
             paths.append(out_path)
@@ -398,11 +458,42 @@ def _normalise_run(r: dict, index: int) -> dict:
     return r
 
 
-def read_drawing(drawing_path: Path, pages: list[int] | None = None) -> DrawingExtraction:
+def _supports_default_fallbacks(model: str) -> bool:
+    """Models whose safety classifiers can decline a request; for these the
+    API can re-run a declined request on another model (`fallbacks`)."""
+    return model.startswith(("claude-opus-5", "claude-fable-5", "claude-mythos-5"))
+
+
+def _call_claude(client: anthropic.Anthropic, model: str, content: list):
+    """Stream the request (a dense sheet plus tiles can take minutes — a
+    streamed request never hits an HTTP read timeout) with structured output,
+    and return the final message."""
+    kwargs = dict(
+        model=model,
+        max_tokens=32000,
+        system=SYSTEM_PROMPT,
+        thinking={"type": "adaptive"},
+        output_config={"format": {"type": "json_schema", "schema": EXTRACTION_SCHEMA}},
+        messages=[{"role": "user", "content": content}],
+    )
+    if _supports_default_fallbacks(model):
+        stream = client.beta.messages.stream(
+            **kwargs, betas=["server-side-fallback-2026-07-01"], fallbacks="default",
+        )
+    else:
+        stream = client.messages.stream(**kwargs)
+    with stream as s:
+        return s.get_final_message()
+
+
+def read_drawing(
+    drawing_path: Path, pages: list[int] | None = None, model: str | None = None,
+) -> DrawingExtraction:
     """
     Main entry point. Accepts PDF (multi-page) or image file.
     `pages` is an explicit 1-based page selection from the picker; when None,
-    the first MAX_PDF_PAGES are read.
+    the first MAX_PDF_PAGES are read. `model` overrides settings.claude_model
+    (used by the drawing eval to compare models).
     Calls Claude with vision and returns a DrawingExtraction.
     """
     # Convert PDF → images; normalise other image formats (TIFF etc.) to PNG
@@ -451,16 +542,11 @@ def read_drawing(drawing_path: Path, pages: list[int] | None = None) -> DrawingE
     })
 
     try:
-        message = client.messages.create(
-            model=settings.claude_model,
-            max_tokens=8192,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": content}],
-        )
+        message = _call_claude(client, model or settings.claude_model, content)
     except anthropic.AuthenticationError:
         raise RuntimeError(
             "Anthropic rejected the API key (invalid key). In Render, open the "
-            "work-16 service > Environment and set ANTHROPIC_API_KEY to a valid key "
+            "new-mikro-16 service > Environment and set ANTHROPIC_API_KEY to a valid key "
             "from console.anthropic.com (paste the whole key, no spaces or quotes). "
             "Or switch to Manual Entry mode, which needs no API key."
         )
@@ -475,11 +561,24 @@ def read_drawing(drawing_path: Path, pages: list[int] | None = None) -> DrawingE
             "internet connection and try again, or use Manual Entry mode."
         )
     except anthropic.APIStatusError as e:
+        # An empty balance arrives as a 400 — or, on a streamed request, as an
+        # error event inside a 200 response — not as a RateLimitError.
+        if "credit balance" in str(e.message).lower():
+            raise RuntimeError(
+                "The Anthropic account is out of credit, so drawings can't be read "
+                "right now. Add credit at console.anthropic.com > Billing, then try "
+                "again. Or use Manual Entry mode."
+            )
         raise RuntimeError(
             f"Anthropic API error ({e.status_code}). Please try again shortly, "
             f"or use Manual Entry mode. Details: {e.message}"
         )
 
+    if message.stop_reason == "refusal":
+        raise RuntimeError(
+            "Claude declined to read this drawing. Try again, pick a different "
+            "page, or use Manual Entry."
+        )
     if message.stop_reason == "max_tokens":
         raise RuntimeError(
             "Claude's reply was cut off before it finished — the drawing may have "
