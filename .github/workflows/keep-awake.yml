@@ -1,0 +1,24 @@
+# Render's free plan puts new-mikro-16 to sleep after 15 minutes without
+# traffic, and the first visitor after that waits up to a minute for it to
+# wake. Pinging every 10 minutes keeps it warm.
+#
+# Free-plan budget: 750 instance-hours/month per workspace. One service awake
+# 24/7 uses ~730, so any other free web service in the workspace (e.g. the
+# old work-16) must be suspended or this will exhaust the hours.
+#
+# GitHub pauses scheduled workflows after 60 days with no repository
+# activity — re-enable from the Actions tab if that happens.
+name: Keep app awake
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping new-mikro-16
+        run: curl -fsS -o /dev/null -w "%{http_code} in %{time_total}s\n" --max-time 120 https://new-mikro-16.onrender.com/
