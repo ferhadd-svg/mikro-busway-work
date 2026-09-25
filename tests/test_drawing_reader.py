@@ -144,3 +144,106 @@ def test_prompt_covers_busbar_trunking_synonym():
     model needs an explicit note that "BUSBAR TRUNKING" is busduct, not the
     excluded case, to avoid a false-negative on this label."""
     assert "BUSBAR TRUNKING" in SYSTEM_PROMPT
+
+
+# ------------------------------------------------------------------ #
+#  API call shape                                                     #
+# ------------------------------------------------------------------ #
+
+class _FakeStream:
+    def __init__(self, sink, kwargs):
+        sink.update(kwargs)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def get_final_message(self):
+        return "final"
+
+
+class _FakeMessages:
+    def __init__(self, sink):
+        self.sink = sink
+
+    def stream(self, **kwargs):
+        return _FakeStream(self.sink, kwargs)
+
+
+class _FakeClient:
+    def __init__(self):
+        self.plain, self.beta_sink = {}, {}
+        self.messages = _FakeMessages(self.plain)
+        self.beta = type("B", (), {"messages": _FakeMessages(self.beta_sink)})()
+
+
+def test_call_uses_structured_output_and_streaming():
+    from app.services.drawing_reader import _call_claude, EXTRACTION_SCHEMA
+    client = _FakeClient()
+    assert _call_claude(client, "claude-opus-4-8", [{"type": "text", "text": "x"}]) == "final"
+    assert client.plain["output_config"]["format"]["schema"] is EXTRACTION_SCHEMA
+    assert client.plain["thinking"] == {"type": "adaptive"}
+    assert "fallbacks" not in client.plain and not client.beta_sink
+
+
+def test_opus5_family_opts_into_default_fallbacks():
+    from app.services.drawing_reader import _call_claude
+    client = _FakeClient()
+    _call_claude(client, "claude-opus-5", [])
+    assert client.beta_sink["fallbacks"] == "default"
+    assert client.beta_sink["betas"] == ["server-side-fallback-2026-07-01"]
+    assert not client.plain
+
+
+def test_schema_output_normalises_into_busruns():
+    """A reply shaped exactly like EXTRACTION_SCHEMA must pass through
+    _normalise_run into a valid BusRun (nulls included)."""
+    from app.schemas.boq import BusRun
+    from app.services.drawing_reader import _normalise_run
+    run = {
+        "run_id": "RUN-1", "run_type": "RISER", "rating_a": 1250, "frame_rating_a": 1250,
+        "material": "AL", "earth_pct": 50, "routing": "FROM LEVEL 1 TO LEVEL 9",
+        "phases": "3P4W", "length_m": None, "hanger_spacing_m": 1.5,
+        "num_fixed_hangers": None, "num_spring_hangers": None, "piu_ratings": [100, 250],
+        "spare_openings": 0, "needs_bimetal": True, "flags": [],
+    }
+    assert BusRun(**_normalise_run(run, 1)).frame_rating_a == 1250
+
+
+def test_eval_scorer():
+    from types import SimpleNamespace as NS
+    from scripts.eval_drawings import score
+    ext = NS(runs=[NS(rating_a=1250, material="AL", earth_pct=50, run_type="RISER",
+                      piu_ratings=[100], flags=["Existing busduct up to L7 excluded"])],
+             global_flags=[])
+    res = dict(score(ext, {"min_runs": 1,
+                           "must_include": [{"rating": 1250, "run_type": ["RISER", "MSB-Riser"]}],
+                           "forbid_ratings": [2000], "piu_includes": [60],
+                           "flag_contains": ["existing"]}))
+    assert list(res.values()) == [True, True, True, False, True]
+
+
+def test_out_of_credit_gets_a_plain_message(tmp_path, monkeypatch):
+    """A drained balance mid-stream surfaces as APIStatusError(200) with the
+    real reason only in the body — the user must be told to add credit."""
+    import anthropic
+    import httpx2
+    import pytest
+    from PIL import Image
+    from app.config import settings
+    from app.services import drawing_reader as dr
+
+    img = tmp_path / "sld.png"
+    Image.new("RGB", (100, 100), "white").save(img)
+    monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+
+    def boom(*a, **k):
+        resp = httpx2.Response(200, request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages"))
+        raise anthropic.APIStatusError(
+            "Your credit balance is too low to access the Anthropic API.", response=resp, body=None)
+
+    monkeypatch.setattr(dr, "_call_claude", boom)
+    with pytest.raises(RuntimeError, match="out of credit"):
+        dr.read_drawing(img)
