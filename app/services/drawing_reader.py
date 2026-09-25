@@ -111,6 +111,14 @@ Respond with ONLY a JSON object — no markdown fences, no commentary. Schema:
 
 # When no pages are chosen (legacy single-call path), read up to this many.
 MAX_PDF_PAGES = 4
+# Render PDFs at up to this DPI, but never past this many pixels on the long
+# edge. At 220 DPI an A1 sheet is ~7300 px (peaks ~330 MB while tiling) and an
+# A0 ~10300 px — enough to run Render's 512 MB free instance out of memory,
+# killing the read mid-way. Nothing is lost by the cap: the tile grid (at most
+# _MAX_TILES tiles) is downscaled by the model to ~1568 px per tile anyway, so
+# ~7500 px is already the most detail that reaches it.
+_RENDER_DPI = 220
+_MAX_RENDER_PX = 7500
 # Cap how many page thumbnails the picker renders (bounds a huge tender set).
 MAX_THUMBNAIL_PAGES = 40
 
@@ -179,9 +187,11 @@ def _pdf_to_images(
         for i in indices:
             page = doc.load_page(i)
             # PDFs default to 72 DPI; render at ~220 DPI so small busduct/ACB
-            # labels survive. The page is tiled afterwards, so a big raster is
-            # fine — it is never sent to the model whole at this size.
-            pix = page.get_pixmap(matrix=fitz.Matrix(220 / 72, 220 / 72))
+            # labels survive, capped for large sheets (see _MAX_RENDER_PX).
+            # The page is tiled afterwards — never sent to the model whole.
+            long_edge_pt = max(page.rect.width, page.rect.height) or 1
+            zoom = min(_RENDER_DPI / 72, _MAX_RENDER_PX / long_edge_pt)
+            pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
             out_path = pdf_path.with_name(f"{pdf_path.stem}_p{i + 1}.png")
             pix.save(str(out_path))
             paths.append(out_path)
@@ -460,7 +470,7 @@ def read_drawing(drawing_path: Path, pages: list[int] | None = None) -> DrawingE
     except anthropic.AuthenticationError:
         raise RuntimeError(
             "Anthropic rejected the API key (invalid key). In Render, open the "
-            "work-16 service > Environment and set ANTHROPIC_API_KEY to a valid key "
+            "new-mikro-16 service > Environment and set ANTHROPIC_API_KEY to a valid key "
             "from console.anthropic.com (paste the whole key, no spaces or quotes). "
             "Or switch to Manual Entry mode, which needs no API key."
         )
