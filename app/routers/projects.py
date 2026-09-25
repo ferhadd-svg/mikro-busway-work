@@ -137,7 +137,7 @@ def update_project(project_id: int, data: ProjectUpdate, db: Session = Depends(g
 _ALLOWED_DRAWING = (".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff")
 
 
-async def _save_uploaded_drawing(project: Project, file: UploadFile) -> Path:
+async def _save_uploaded_drawing(project: Project, file: UploadFile, db: Session) -> Path:
     # Path(...).name strips any directory components a crafted filename
     # (e.g. "../../app/static/mikro-logo.png") might carry — without it,
     # any logged-in user could write outside _project_dir(project.id).
@@ -145,10 +145,15 @@ async def _save_uploaded_drawing(project: Project, file: UploadFile) -> Path:
     suffix = Path(safe_filename).suffix.lower()
     if suffix not in _ALLOWED_DRAWING:
         raise HTTPException(400, f"Unsupported file type '{suffix}'. Allowed: {', '.join(_ALLOWED_DRAWING)}")
+    # mkdir: the project folder is gone after a deploy wipes data/, even
+    # though the project itself survives in the database.
+    _project_dir(project.id).mkdir(parents=True, exist_ok=True)
     drawing_path = _project_dir(project.id) / safe_filename
     with open(drawing_path, "wb") as f:
         f.write(await file.read())
     project.drawing_filename = safe_filename
+    file_store.save(db, "projects", drawing_path, subdir=str(project.id))
+    file_store.delete_subdir_except(db, "projects", str(project.id), keep=safe_filename)
     return drawing_path
 
 
@@ -179,7 +184,7 @@ async def preview_drawing(project_id: int, file: UploadFile = File(...), db: Ses
     thumbnails so the user can pick which sheet holds the busduct SLD. Does
     NOT call the AI."""
     project = _get_or_404(project_id, db, current_user)
-    drawing_path = await _save_uploaded_drawing(project, file)
+    drawing_path = await _save_uploaded_drawing(project, file, db)
     db.commit()
     if drawing_path.suffix.lower() == ".pdf":
         page_count, thumbnails, page_hints = pdf_page_thumbnails(drawing_path)
@@ -200,8 +205,8 @@ def read_saved_drawing(project_id: int, data: DrawingReadRequest, db: Session = 
     project = _get_or_404(project_id, db, current_user)
     if not project.drawing_filename:
         raise HTTPException(400, "No drawing uploaded yet — upload one first.")
-    drawing_path = _project_dir(project_id) / project.drawing_filename
-    if not drawing_path.exists():
+    drawing_path = file_store.restore(db, "projects", project.drawing_filename, subdir=str(project_id))
+    if not drawing_path:
         raise HTTPException(404, "Uploaded drawing file is missing — please re-upload.")
     return _read_and_store(project, drawing_path, data.pages, db)
 
@@ -211,7 +216,7 @@ async def upload_drawing(project_id: int, file: UploadFile = File(...), db: Sess
     """Single-call upload+read (kept for images / direct use). The wizard uses
     preview + read so it can offer a page picker."""
     project = _get_or_404(project_id, db, current_user)
-    drawing_path = await _save_uploaded_drawing(project, file)
+    drawing_path = await _save_uploaded_drawing(project, file, db)
     return _read_and_store(project, drawing_path, None, db)
 
 
