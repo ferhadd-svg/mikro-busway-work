@@ -13,7 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from app.database import engine, Base
+from app.database import engine, Base, SessionLocal
+from app.models.price_list_version import PriceListVersion
+from app.services import file_store
 from app.config import settings
 from app.services.price_list import price_list
 from app.services.email import email_configured
@@ -41,11 +43,33 @@ def _bundled_price_list_source() -> Path | None:
     return None
 
 
-def _load_price_list_on_startup() -> None:
+def _restore_files_from_db() -> Path | None:
+    """Write files wiped from disk (Render's free plan has no persistent disk)
+    back from their database copies. Returns the active price list's path,
+    if there is an active PriceListVersion whose file could be restored."""
+    db = SessionLocal()
+    try:
+        file_store.restore_all(db, "templates")
+        active = db.query(PriceListVersion).filter(PriceListVersion.is_active == True).first()
+        return file_store.restore(db, "price_list", active.stored_filename) if active else None
+    finally:
+        db.close()
+
+
+def _load_price_list_on_startup(active_path: Path | None = None) -> None:
     """Load the most recently uploaded price list. When none exists (e.g. a
     fresh deploy on Render's ephemeral disk), fall back to the bundled default
     so the app always has correct prices — copying it into price_list_dir so it
-    shows up in the price-list info/versions UI like a normal file."""
+    shows up in the price-list info/versions UI like a normal file.
+
+    `active_path` (the active PriceListVersion's file, from the database) wins
+    over both: after a restore every file has a fresh mtime, so "newest on
+    disk" no longer means "the one the admin picked"."""
+    if active_path:
+        price_list.load(active_path)
+        print(f"[startup] Price list loaded (active version): {active_path.name}")
+        return
+
     uploaded = sorted(
         settings.price_list_dir.glob("*.xls*"),
         key=lambda p: p.stat().st_mtime,
@@ -77,7 +101,7 @@ async def lifespan(app: FastAPI):
     # Create all DB tables
     Base.metadata.create_all(bind=engine)
 
-    _load_price_list_on_startup()
+    _load_price_list_on_startup(_restore_files_from_db())
 
     yield
 

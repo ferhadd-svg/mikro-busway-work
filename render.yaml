@@ -1,7 +1,8 @@
 services:
   - type: web
-    name: work-16
+    name: new-mikro-16
     runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt && python -m app.seed
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
@@ -9,9 +10,14 @@ services:
         value: "3.12.8"    # pin so pip finds prebuilt wheels for pymupdf/Pillow (build can't fail)
       - key: ANTHROPIC_API_KEY
         sync: false        # secret — set the value in the Render dashboard (Environment tab), not in this file
+      # The free plan has no persistent disk, so the default SQLite file under
+      # data/ is wiped on every deploy. Point this at a hosted Postgres (e.g. a
+      # free Neon or Supabase database) so users, projects and generated
+      # quotations survive deploys. Leave unset to fall back to SQLite.
       - key: DATABASE_URL
-        value: sqlite:///./data/mikro_busway.db
-    disk:
-      name: data
-      mountPath: /opt/render/project/src/data
-      sizeGB: 1
+        sync: false
+      # Admin login created on first boot of an empty database.
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

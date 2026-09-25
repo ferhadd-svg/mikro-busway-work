@@ -72,3 +72,22 @@ def test_explicit_override_path_is_preferred(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "price_list_bundled_file", str(override))
 
     assert main._bundled_price_list_source() == override
+
+
+def test_active_version_from_db_wins_over_newest_on_disk(tmp_path, monkeypatch):
+    """After a disk wipe every restored file has a fresh mtime, so the active
+    PriceListVersion (passed in from the database) must win over the newest
+    file on disk."""
+    d = tmp_path / "price_list"
+    d.mkdir()
+    bundled = main._bundled_price_list_source()
+    active = d / f"1_{bundled.name}"
+    active.write_bytes(bundled.read_bytes())
+    (d / f"2_{bundled.name}").write_bytes(bundled.read_bytes())  # newer, not active
+    monkeypatch.setattr(settings, "price_list_dir", d)
+    fresh = PriceList()
+    monkeypatch.setattr(main, "price_list", fresh)
+
+    main._load_price_list_on_startup(active)
+
+    assert Path(fresh.loaded_file()) == active

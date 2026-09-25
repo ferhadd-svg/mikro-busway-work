@@ -5,6 +5,7 @@ Run with:  python -m app.seed
 
 import secrets
 
+from app.config import settings
 from app.database import engine, Base, SessionLocal
 from app.models.salesperson import Salesperson
 from app.models.user import User
@@ -59,15 +60,17 @@ def seed():
 
 def seed_admin_user():
     """Bootstrap a single admin login account if no users exist yet.
-    The password is generated here and printed once — it is never stored
-    in plaintext anywhere else, and never returned via any API."""
+    Uses ADMIN_EMAIL / ADMIN_PASSWORD when set. Otherwise the password is
+    generated here and printed once — it is never stored in plaintext
+    anywhere else, and never returned via any API."""
     db = SessionLocal()
     try:
         if db.query(User).count() > 0:
             return
-        password = secrets.token_urlsafe(12)
+        from_env = bool(settings.admin_password)
+        password = settings.admin_password or secrets.token_urlsafe(12)
         admin = User(
-            email="admin@itmikro.com",
+            email=settings.admin_email.strip(),
             name="Administrator",
             hashed_password=hash_password(password),
             role="admin",
@@ -77,9 +80,12 @@ def seed_admin_user():
         print("=" * 60)
         print("[seed] No users found — created default admin account:")
         print(f"[seed]   email:    {admin.email}")
-        print(f"[seed]   password: {password}")
-        print("[seed] This password is shown ONLY ONCE. Log in and change it")
-        print("[seed] immediately via the account menu (Change Password).")
+        if from_env:
+            print("[seed]   password: (from the ADMIN_PASSWORD env var)")
+        else:
+            print(f"[seed]   password: {password}")
+            print("[seed] This password is shown ONLY ONCE. Log in and change it")
+            print("[seed] immediately via the account menu (Change Password).")
         print("=" * 60)
     finally:
         db.close()

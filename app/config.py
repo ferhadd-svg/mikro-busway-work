@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     secret_key: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
     session_cookie_name: str = "mikro_session"
     session_lifetime_days: int = 14
+
+    # Bootstrap admin login, created by `python -m app.seed` when the users
+    # table is empty. Set both as Render env vars so the login is known up
+    # front; if ADMIN_PASSWORD is unset a random one is generated and printed
+    # once to the deploy log instead.
+    admin_email: str = "admin@itmikro.com"
+    admin_password: str = ""
     cookie_secure: bool = False   # set True in production once served over HTTPS
 
     # Email — optional, sent via the Brevo transactional email HTTP API (not
