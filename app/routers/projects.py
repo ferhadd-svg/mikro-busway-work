@@ -37,6 +37,7 @@ from app.services.auth import get_current_user, require_role
 from app.services.customers import get_or_create_customer
 from app.services.projects import apply_outcome
 from app.services.email import send_quotation_email, email_configured
+from app.services import file_store
 from app.config import settings
 
 # Every endpoint in this router requires a logged-in user (any role) — see
@@ -336,6 +337,7 @@ def generate_boq(project_id: int, db: Session = Depends(get_db), current_user: U
 
     project.boq_filename = Path(result.boq_file).name
     project.status = "boq_ready"
+    file_store.save(db, "projects", Path(result.boq_file))
     db.commit()
 
     return result
@@ -385,6 +387,7 @@ def generate_quotation(project_id: int, db: Session = Depends(get_db), current_u
     )
 
     project.quotation_filename = out_path.name
+    file_store.save(db, "projects", out_path)
     project.quoted_value_myr = round(boq.subtotal_myr * 1.10)
     project.status = "quotation_ready"
     db.commit()
@@ -420,9 +423,9 @@ def download_boq(project_id: int, db: Session = Depends(get_db), current_user: U
     project = _get_or_404(project_id, db, current_user)
     if not project.boq_filename:
         raise HTTPException(404, "BOQ not generated yet.")
-    path = settings.projects_dir / project.boq_filename
-    if not path.exists():
-        raise HTTPException(404, "BOQ file missing from disk.")
+    path = file_store.restore(db, "projects", project.boq_filename)
+    if not path:
+        raise HTTPException(404, "BOQ file missing — regenerate the BOQ.")
     return FileResponse(
         str(path),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -435,9 +438,9 @@ def download_quotation(project_id: int, db: Session = Depends(get_db), current_u
     project = _get_or_404(project_id, db, current_user)
     if not project.quotation_filename:
         raise HTTPException(404, "Quotation not generated yet.")
-    path = settings.projects_dir / project.quotation_filename
-    if not path.exists():
-        raise HTTPException(404, "Quotation file missing from disk.")
+    path = file_store.restore(db, "projects", project.quotation_filename)
+    if not path:
+        raise HTTPException(404, "Quotation file missing — regenerate the quotation.")
     return FileResponse(
         str(path),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -480,9 +483,9 @@ def email_quotation(project_id: int, data: EmailQuotationRequest, db: Session = 
     _require_status(project, ("quotation_ready",))
     if not project.quotation_filename:
         raise HTTPException(404, "Quotation not generated yet.")
-    path = settings.projects_dir / project.quotation_filename
-    if not path.exists():
-        raise HTTPException(404, "Quotation file missing from disk.")
+    path = file_store.restore(db, "projects", project.quotation_filename)
+    if not path:
+        raise HTTPException(404, "Quotation file missing — regenerate the quotation.")
     if not data.to:
         raise HTTPException(400, "At least one recipient is required.")
 
@@ -541,7 +544,7 @@ def assign_salesperson(project_id: int, sp_id: int, db: Session = Depends(get_db
 # ------------------------------------------------------------------ #
 
 @router.post("/templates/upload", dependencies=[Depends(require_role("admin"))])
-async def upload_template(file: UploadFile = File(...)):
+async def upload_template(file: UploadFile = File(...), db: Session = Depends(get_db)):
     if not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(400, "Only .xlsx or .xls templates accepted.")
     safe_filename = Path(file.filename).name
@@ -549,6 +552,7 @@ async def upload_template(file: UploadFile = File(...)):
     with open(dest, "wb") as f:
         content = await file.read()
         f.write(content)
+    file_store.save(db, "templates", dest)
     return {"message": f"Template '{safe_filename}' uploaded.", "path": str(dest)}
 
 

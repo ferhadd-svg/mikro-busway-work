@@ -12,6 +12,7 @@ from app.models.user import User
 from app.models.price_list_version import PriceListVersion
 from app.schemas.price_list import PriceListVersionOut, PriceRateOut
 from app.services.price_list import price_list
+from app.services import file_store
 from app.services.auth import get_current_user, require_role
 
 router = APIRouter(prefix="/price-list", tags=["Price List"])
@@ -61,6 +62,7 @@ async def upload_price_list(
         f.write(content)
 
     price_list.load(dest)
+    file_store.save(db, "price_list", dest)
     row_count = (
         len(price_list._al) + len(price_list._cu)
         + len(price_list._piu) + len(price_list._bimetal)
@@ -110,8 +112,8 @@ def reactivate_price_list_version(version_id: int, db: Session = Depends(get_db)
     version = db.get(PriceListVersion, version_id)
     if not version:
         raise HTTPException(404, f"Price list version {version_id} not found.")
-    path = settings.price_list_dir / version.stored_filename
-    if not path.exists():
+    path = file_store.restore(db, "price_list", version.stored_filename)
+    if not path:
         raise HTTPException(404, f"File '{version.stored_filename}' missing from disk.")
 
     price_list.load(path)
