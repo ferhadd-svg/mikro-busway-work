@@ -129,3 +129,75 @@ def test_admin_not_reseeded_when_users_exist(monkeypatch):
     seed.seed_admin_user()
     seed.seed_admin_user()
     assert Session().query(User).count() == 1
+
+
+# ------------------------------------------------------------------ #
+#  Drawings                                                           #
+# ------------------------------------------------------------------ #
+
+class _FakeUpload:
+    def __init__(self, filename, content):
+        self.filename, self._content = filename, content
+
+    async def read(self):
+        return self._content
+
+
+def test_drawing_upload_after_disk_wipe_and_restore(tmp_path, monkeypatch):
+    """The project survives in the DB but its folder is gone: uploading must
+    recreate the folder, and a later read must find the drawing again even
+    after another wipe."""
+    import asyncio
+    import shutil
+    from app.models.project import Project
+    from app.routers.projects import _save_uploaded_drawing
+
+    monkeypatch.setattr(settings, "projects_dir", tmp_path)
+    db = _sessionmaker()()
+    project = Project(id=7, our_ref="MK-7", client_name="C")
+
+    asyncio.run(_save_uploaded_drawing(project, _FakeUpload("sld.pdf", b"%PDF"), db))
+    shutil.rmtree(tmp_path / "7")
+
+    restored = file_store.restore(db, "projects", "sld.pdf", subdir="7")
+    assert restored == tmp_path / "7" / "sld.pdf"
+    assert restored.read_bytes() == b"%PDF"
+
+
+def test_new_drawing_replaces_old_stored_copy(tmp_path, monkeypatch):
+    import asyncio
+    from app.models.project import Project
+    from app.routers.projects import _save_uploaded_drawing
+
+    monkeypatch.setattr(settings, "projects_dir", tmp_path)
+    db = _sessionmaker()()
+    project = Project(id=7, our_ref="MK-7", client_name="C")
+
+    asyncio.run(_save_uploaded_drawing(project, _FakeUpload("old.pdf", b"1"), db))
+    asyncio.run(_save_uploaded_drawing(project, _FakeUpload("new.pdf", b"2"), db))
+
+    assert [r.name for r in db.query(StoredFile).all()] == ["7/new.pdf"]
+
+
+def test_restore_all_skips_drawings(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "projects_dir", tmp_path)
+    db = _sessionmaker()()
+    (tmp_path / "3").mkdir()
+    (tmp_path / "3" / "d.pdf").write_bytes(b"x")
+    file_store.save(db, "projects", tmp_path / "3" / "d.pdf", subdir="3")
+    assert file_store.restore_all(db, "projects") == 0
+
+
+# ------------------------------------------------------------------ #
+#  Secure cookie default                                              #
+# ------------------------------------------------------------------ #
+
+def test_cookie_secure_defaults_on_under_render(monkeypatch):
+    from app.config import Settings
+    monkeypatch.delenv("COOKIE_SECURE", raising=False)
+    monkeypatch.setenv("RENDER", "true")
+    assert Settings().cookie_secure is True
+    monkeypatch.delenv("RENDER")
+    assert Settings().cookie_secure is False
+    monkeypatch.setenv("COOKIE_SECURE", "true")
+    assert Settings().cookie_secure is True

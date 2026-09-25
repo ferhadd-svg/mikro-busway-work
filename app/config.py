@@ -51,7 +51,10 @@ class Settings(BaseSettings):
     # once to the deploy log instead.
     admin_email: str = "admin@itmikro.com"
     admin_password: str = ""
-    cookie_secure: bool = False   # set True in production once served over HTTPS
+    # Secure-flag the session cookie in production. Render sets RENDER=true in
+    # every service's environment and serves only over HTTPS, so default to
+    # on there and off locally (http://localhost). COOKIE_SECURE overrides.
+    cookie_secure: bool = Field(default_factory=lambda: bool(os.environ.get("RENDER")))
 
     # Email — optional, sent via the Brevo transactional email HTTP API (not
     # raw SMTP: Render's free plan blocks all outbound traffic on SMTP ports

@@ -9,8 +9,11 @@ before touching the filesystem.
 import asyncio
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from app.config import settings
+from app.database import Base
 from app.models.project import Project
 from app.routers.projects import _save_uploaded_drawing
 
@@ -26,6 +29,12 @@ class _FakeUploadFile:
         return self._content
 
 
+def _db():
+    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=engine)
+    return sessionmaker(bind=engine)()
+
+
 def _project(id_=1):
     return Project(id=id_, our_ref="TEST-1", client_name="Test Client")
 
@@ -36,7 +45,7 @@ def test_save_uploaded_drawing_strips_path_traversal(tmp_path, monkeypatch):
     project = _project()
 
     fake = _FakeUploadFile("../../../evil.pdf")
-    saved_path = asyncio.run(_save_uploaded_drawing(project, fake))
+    saved_path = asyncio.run(_save_uploaded_drawing(project, fake, _db()))
 
     # Must land inside this project's own directory, never above it.
     assert saved_path.parent == tmp_path / "1"
@@ -50,7 +59,7 @@ def test_save_uploaded_drawing_strips_windows_style_traversal(tmp_path, monkeypa
     project = _project()
 
     fake = _FakeUploadFile("..\\..\\evil.pdf")
-    saved_path = asyncio.run(_save_uploaded_drawing(project, fake))
+    saved_path = asyncio.run(_save_uploaded_drawing(project, fake, _db()))
 
     assert saved_path.parent == tmp_path / "1"
     assert saved_path.is_relative_to(tmp_path)
@@ -62,7 +71,7 @@ def test_save_uploaded_drawing_records_sanitized_filename_on_project(tmp_path, m
     project = _project()
 
     fake = _FakeUploadFile("../../secret.png")
-    asyncio.run(_save_uploaded_drawing(project, fake))
+    asyncio.run(_save_uploaded_drawing(project, fake, _db()))
 
     assert project.drawing_filename == "secret.png"
 
@@ -73,5 +82,5 @@ def test_save_uploaded_drawing_still_rejects_bad_extension(tmp_path, monkeypatch
 
     fake = _FakeUploadFile("../../evil.exe")
     with pytest.raises(Exception) as exc_info:
-        asyncio.run(_save_uploaded_drawing(project, fake))
+        asyncio.run(_save_uploaded_drawing(project, fake, _db()))
     assert "Unsupported file type" in str(exc_info.value)
