@@ -14,7 +14,7 @@ import json
 
 
 # Frame rating ladder — maps nominal to Mikro frame rating
-FRAME_LADDER = [200, 400, 630, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000]
+FRAME_LADDER = [200, 400, 630, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6300]
 
 # Reverse of the parser's LABEL_MAP key prefixes (excluding "feeder", handled
 # specially in all_rates() since it has an extra earth-% suffix segment) —
@@ -30,6 +30,10 @@ _CATEGORY_PREFIX_MAP = {
     "spring_hanger": "Spring Hanger",
     "plugin_hole": "Plug-in Opening",
 }
+
+
+def is_five_wire(phases: str | None) -> bool:
+    return "5W" in str(phases or "").upper().replace(" ", "")
 
 
 def _strip_frame_suffix(key: str) -> str:
@@ -50,7 +54,8 @@ def _extract_trailing_int(key: str) -> Optional[int]:
 
 def resolve_frame_rating(nominal_a: int) -> int:
     """Return the Mikro frame rating for a given nominal amperage.
-    E.g. 500 → 630, 100 → 200 (minimum frame = 200A).
+    E.g. 500 → 630, 100 → 200 (minimum frame = 200A). Anything above the
+    largest frame clamps to it — boq_builder warns when that happens.
     """
     for frame in FRAME_LADDER:
         if nominal_a <= frame:
@@ -70,22 +75,48 @@ class PriceList:
         self._loaded_file: Optional[str] = None
 
     def load(self, path: Path) -> None:
-        suffix = path.suffix.lower()
-        if suffix == ".xls":
-            self._load_xls(path)
+        """Replace ALL rates with those in `path`. Every store is reset first,
+        so a sheet missing from the new file leaves that store empty (its
+        lookups then warn as RM 0) instead of silently keeping the previous
+        list's rates. Parsed into a fresh instance and swapped in at the end,
+        so a file that fails to parse leaves the current rates untouched."""
+        fresh = PriceList()
+        if path.suffix.lower() == ".xls":
+            fresh._load_xls(path)
         else:
-            self._load_xlsx(path)
+            fresh._load_xlsx(path)
+        self._al, self._cu, self._piu = fresh._al, fresh._cu, fresh._piu
+        self._bimetal, self._bimetal_dims = fresh._bimetal, fresh._bimetal_dims
         self._loaded_file = str(path)
+
+    def row_count(self) -> int:
+        """Total parsed rates — a sanity-check number for uploads."""
+        return len(self._al) + len(self._cu) + len(self._piu) + len(self._bimetal)
+
+    def coverage_problems(self) -> list[str]:
+        """Plain-English list of what a loaded file is missing. Empty when the
+        list has feeder rates for both materials plus PIU and bi-metal."""
+        problems = []
+        if not any(k.startswith("feeder_") for k in self._al):
+            problems.append("no aluminium feeder rates (sheet 'List Price (Al)')")
+        if not any(k.startswith("feeder_") for k in self._cu):
+            problems.append("no copper feeder rates (sheet 'List Price (Cu)')")
+        if not self._piu:
+            problems.append("no plug-in unit (PIU) rates")
+        if not self._bimetal:
+            problems.append("no bi-metal plate rates")
+        return problems
 
     # ------------------------------------------------------------------ #
     #  Public lookup API                                                   #
     # ------------------------------------------------------------------ #
 
-    def feeder(self, frame_a: int, earth_pct: int, material: str) -> float:
-        """Feeder 3P(4W) + earth% rate."""
+    def feeder(self, frame_a: int, earth_pct: int, material: str, phases: str = "3P4W") -> float:
+        """Feeder + earth% rate: the 3P(4W) row, or the 3P(5W) row for a
+        5-wire run (the sheet only prices 5W at 50%E)."""
         store = self._cu if material == "CU" else self._al
-        key = f"feeder_{frame_a}_{earth_pct}"
-        return store.get(key, 0.0)
+        prefix = "feeder5w" if is_five_wire(phases) else "feeder"
+        return store.get(f"{prefix}_{frame_a}_{earth_pct}", 0.0)
 
     def flange_end(self, frame_a: int, material: str) -> float:
         store = self._cu if material == "CU" else self._al
@@ -130,13 +161,21 @@ class PriceList:
         store = self._cu if material == "CU" else self._al
         return store.get(f"plugin_hole_{frame_a}", 0.0)
 
+    def _bimetal_frame(self, frame_a: int) -> int:
+        """The bi-metal sheet starts at 400A; a smaller frame uses the
+        smallest plate listed at or above it rather than pricing at RM 0."""
+        if f"bimetal_{frame_a}" in self._bimetal:
+            return frame_a
+        listed = sorted(int(k.split("_")[1]) for k in self._bimetal)
+        return next((f for f in listed if f >= frame_a), frame_a)
+
     def bimetal(self, frame_a: int) -> float:
         """Bi-metal plate — aluminium runs only."""
-        return self._bimetal.get(f"bimetal_{frame_a}", 0.0)
+        return self._bimetal.get(f"bimetal_{self._bimetal_frame(frame_a)}", 0.0)
 
     def bimetal_dims(self, frame_a: int):
         """(No, W_mm, L_mm) for the bi-metal plate at this frame, or None."""
-        return self._bimetal_dims.get(frame_a)
+        return self._bimetal_dims.get(self._bimetal_frame(frame_a))
 
     def piu(self, rating_a: int, ka: int = 26) -> float:
         """PIU Hyundai MCCB rate by ampere + kA tier."""
@@ -177,11 +216,12 @@ class PriceList:
         rows: list[dict] = []
         for material, store in (("AL", self._al), ("CU", self._cu)):
             for key, rate in store.items():
-                if key.startswith("feeder_"):
+                if key.startswith(("feeder_", "feeder5w_")):
                     parts = key.split("_")
                     if len(parts) == 3:
                         rows.append({
-                            "category": "Feeder", "material": material,
+                            "category": "Feeder (5W)" if parts[0] == "feeder5w" else "Feeder",
+                            "material": material,
                             "frame_a": int(parts[1]), "earth_pct": int(parts[2]),
                             "rate": rate,
                         })
@@ -217,28 +257,33 @@ class PriceList:
         for sheet_name in wb.sheet_names():
             sheet = wb.sheet_by_name(sheet_name)
             sn = sheet_name.strip().lower()
-            if "al" in sn and "list" in sn:
-                self._al = _parse_price_sheet_xls(sheet)
-            elif "cu" in sn and "list" in sn:
-                self._cu = _parse_price_sheet_xls(sheet)
-            elif "piu" in sn:
-                self._piu = _parse_piu_sheet_xls(sheet)
-            elif "bi metal" in sn or "bi-metal" in sn or "bimetal" in sn:
-                self._bimetal, self._bimetal_dims = _parse_bimetal_sheet_xls(sheet)
+            self._take_sheet(sn, list(_rows_xls(sheet)))
 
     def _load_xlsx(self, path: Path) -> None:
         wb = openpyxl.load_workbook(str(path), data_only=True)
         for sheet_name in wb.sheetnames:
             ws = wb[sheet_name]
             sn = sheet_name.strip().lower()
-            if "al" in sn and "list" in sn:
-                self._al = _parse_price_sheet_xlsx(ws)
-            elif "cu" in sn and "list" in sn:
-                self._cu = _parse_price_sheet_xlsx(ws)
-            elif "piu" in sn:
-                self._piu = _parse_piu_sheet_xlsx(ws)
-            elif "bi metal" in sn or "bi-metal" in sn or "bimetal" in sn:
-                self._bimetal, self._bimetal_dims = _parse_bimetal_sheet_xlsx(ws)
+            self._take_sheet(sn, list(_rows_xlsx(ws)))
+
+    def _take_sheet(self, sn: str, rows: list) -> None:
+        """Route one sheet to its parser. A store is only filled by the first
+        sheet that actually yields rates: the real workbook has two
+        PIU-named sheets ("PIU TOU COST" — a costing build-up — and the
+        "PIU & TOU" selling-price table), and the later one must not blank
+        out (or overwrite) the one that parsed."""
+        if "al" in sn and "list" in sn:
+            if not self._al:
+                self._al = _parse_price_sheet(rows)
+        elif "cu" in sn and "list" in sn:
+            if not self._cu:
+                self._cu = _parse_price_sheet(rows)
+        elif "piu" in sn:
+            if not self._piu:
+                self._piu = _parse_piu_sheet(rows)
+        elif "bi metal" in sn or "bi-metal" in sn or "bimetal" in sn:
+            if not self._bimetal:
+                self._bimetal, self._bimetal_dims = _parse_bimetal_sheet(rows)
 
 
 # ------------------------------------------------------------------ #
@@ -261,30 +306,6 @@ def _rows_xls(sheet):
 def _rows_xlsx(ws):
     for row in ws.iter_rows(values_only=True):
         yield list(row)
-
-
-def _parse_price_sheet_xls(sheet) -> dict:
-    return _parse_price_sheet(list(_rows_xls(sheet)))
-
-
-def _parse_price_sheet_xlsx(ws) -> dict:
-    return _parse_price_sheet(list(_rows_xlsx(ws)))
-
-
-def _parse_piu_sheet_xls(sheet) -> dict:
-    return _parse_piu_sheet(list(_rows_xls(sheet)))
-
-
-def _parse_piu_sheet_xlsx(ws) -> dict:
-    return _parse_piu_sheet(list(_rows_xlsx(ws)))
-
-
-def _parse_bimetal_sheet_xls(sheet) -> dict:
-    return _parse_bimetal_sheet(list(_rows_xls(sheet)))
-
-
-def _parse_bimetal_sheet_xlsx(ws) -> dict:
-    return _parse_bimetal_sheet(list(_rows_xlsx(ws)))
 
 
 def _to_float(v) -> Optional[float]:
@@ -382,9 +403,15 @@ def _parse_price_sheet(rows: list) -> dict:
             # (BusRun.phases default), so the 3W rows must be skipped —
             # otherwise the later 3W row silently overwrites the correct
             # (higher) 4W price. Same class of collision as the elbow rows.
+            #
+            # The 5-wire row ("Feeder 3P (5W) + 50%E") comes right after the
+            # 4W rows and also says "50%E" — it is stored under its own key
+            # (feeder5w_*) so it can't overwrite the standard 4W + 50%E
+            # rate, which previously over-priced every 50%E feeder.
             compact = label.replace(" ", "")
             if "3w" in compact:
                 continue
+            prefix = "feeder5w" if "5w" in compact else "feeder"
             has_50 = any(k in label for k in LABEL_MAP["50%e"])
             has_100 = any(k in label for k in LABEL_MAP["100%e"])
             if has_50 or has_100:
@@ -392,7 +419,7 @@ def _parse_price_sheet(rows: list) -> dict:
                 for col, frame_a in frame_cols.items():
                     v = _to_float(row[col] if col < len(row) else None)
                     if v:
-                        result[f"feeder_{frame_a}_{suffix}"] = v
+                        result.setdefault(f"{prefix}_{frame_a}_{suffix}", v)
             continue
 
         for key, aliases in LABEL_MAP.items():
@@ -404,10 +431,14 @@ def _parse_price_sheet(rows: list) -> dict:
             # otherwise silently overwrite the plain Elbow rate.
             matched = label == "elbow" if key == "elbow" else any(alias in label for alias in aliases)
             if matched:
+                # First occurrence wins: the real sheet repeats the accessory
+                # table three times — the net list, then a gross list (2x,
+                # with an "x0.5" discount note), then the net list again. The
+                # net list comes first, so later repeats never overwrite it.
                 for col, frame_a in frame_cols.items():
                     v = _to_float(row[col] if col < len(row) else None)
                     if v:
-                        result[f"{key}_{frame_a}"] = v
+                        result.setdefault(f"{key}_{frame_a}", v)
                 break
 
     return result
@@ -427,7 +458,8 @@ def _parse_piu_sheet(rows: list) -> dict:
     for i, row in enumerate(rows):
         found = []
         for j, cell in enumerate(row):
-            m = re.search(r"(\d+)\s*k[Aa]", str(cell))
+            # Case-insensitive: the real sheet writes "26 KA", not "26kA".
+            m = re.search(r"(\d+)\s*ka\b", str(cell), re.IGNORECASE)
             if m:
                 found.append((j, int(m.group(1))))
         if found:

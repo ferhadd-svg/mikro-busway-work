@@ -24,11 +24,16 @@ from pydantic import ValidationError
 from app.schemas.boq import (
     BusRun, DrawingExtraction, FlagAnswers, BOQLineItem, BOQRun, BOQResponse
 )
-from app.services.price_list import price_list, resolve_frame_rating
+from app.services.price_list import price_list, resolve_frame_rating, FRAME_LADDER
 from app.config import settings
 
 
-class RunOverrideError(ValueError):
+class BOQInputError(ValueError):
+    """The runs can't be priced as given (bad override, missing length). The
+    router maps this to a 400 with the message, never an opaque 500."""
+
+
+class RunOverrideError(BOQInputError):
     """A run_overrides value failed validation. Raised instead of letting a
     bad override crash further down — e.g. a cleared "Rating (A)" field in
     the Confirm Flags Edit panel sends rating_a: null, and
@@ -138,7 +143,7 @@ def _build_tx_msb(run: BusRun) -> list[BOQLineItem]:
     m = run.material
     length = run.length_m or 0.0
     items: list[BOQLineItem] = [
-        _line(_FEEDER_DESC, _U_MTR, length, price_list.feeder(fa, run.earth_pct, m)),
+        _line(_FEEDER_DESC, _U_MTR, length, price_list.feeder(fa, run.earth_pct, m, run.phases)),
         _line("FLANGE END", _U_NOS, 2, price_list.flange_end(fa, m)),
         _line("HORIZONTAL ELBOW", _U_NOS, 2, price_list.elbow(fa, m)),
         _line("VERTICAL ELBOW", _U_NOS, 2, price_list.vertical_elbow(fa, m)),
@@ -167,7 +172,7 @@ def _build_msb_riser(run: BusRun, piu_ka: int) -> tuple[list[BOQLineItem], list[
         fixed, spring = _calc_hangers(length, run.hanger_spacing_m)
 
     items: list[BOQLineItem] = [
-        _line(_FEEDER_DESC, _U_MTR, length, price_list.feeder(fa, run.earth_pct, m)),
+        _line(_FEEDER_DESC, _U_MTR, length, price_list.feeder(fa, run.earth_pct, m, run.phases)),
         _line("FLANGE END", _U_NOS, 2, price_list.flange_end(fa, m)),
         _line("END CLOSURE", _U_NOS, 1, price_list.end_closure(fa, m)),
         _line("HORIZONTAL ELBOW", _U_NOS, 2, price_list.elbow(fa, m)),
@@ -207,7 +212,7 @@ def _build_riser(run: BusRun, piu_ka: int) -> tuple[list[BOQLineItem], list[BOQL
         fixed, spring = _calc_hangers(length, run.hanger_spacing_m)
 
     items: list[BOQLineItem] = [
-        _line(_FEEDER_DESC, _U_MTR, length, price_list.feeder(fa, run.earth_pct, m)),
+        _line(_FEEDER_DESC, _U_MTR, length, price_list.feeder(fa, run.earth_pct, m, run.phases)),
         _line("CABLE ENTRY BOX", _U_NOS, 1, price_list.cable_entry_box(fa, m)),
         _line("END CLOSURE", _U_NOS, 1, price_list.end_closure(fa, m)),
         _line("FIXED HANGER", _U_SETS, fixed, price_list.fixed_hanger(fa, m)),
@@ -247,6 +252,22 @@ def _build_piu(run: BusRun, ka: int) -> list[BOQLineItem]:
 #  Main BOQ builder                                                   #
 # ------------------------------------------------------------------ #
 
+def _priced_frame(run: BusRun) -> int:
+    """The frame to price at. Normally run.frame_rating_a, but when the price
+    list has no feeder rate for that frame in this material (the copper
+    sheet starts at 400A, so a 200A copper run would price at RM 0), use the
+    smallest larger frame that is listed. Unchanged when nothing larger is
+    listed either — the RM 0 warning then reports the gap."""
+    def has_rate(frame):
+        return price_list.feeder(frame, run.earth_pct, run.material, run.phases) > 0
+    if has_rate(run.frame_rating_a):
+        return run.frame_rating_a
+    return next(
+        (f for f in FRAME_LADDER if f > run.frame_rating_a and has_rate(f)),
+        run.frame_rating_a,
+    )
+
+
 def build_boq(
     extraction: DrawingExtraction,
     flags: FlagAnswers,
@@ -254,11 +275,34 @@ def build_boq(
     client_name: str,
 ) -> BOQResponse:
     boq_runs: list[BOQRun] = []
+    notes: list[str] = []
 
     for run in extraction.runs:
         # Apply any per-run overrides from flag answers
         overrides = flags.run_overrides.get(run.run_id, {})
         run = _apply_run_override(run, overrides)
+
+        # An SLD never shows length, so the UI makes the user enter one; the
+        # API must refuse too, or the feeder silently prices at 0 m.
+        if not run.length_m:
+            raise BOQInputError(
+                f"Run {run.run_id} ({run.routing or run.run_type}) has no length. "
+                f"Enter the run length in metres before generating the BOQ."
+            )
+
+        if run.rating_a > FRAME_LADDER[-1]:
+            notes.append(
+                f"{run.run_id}: {run.rating_a}A is above the largest listed frame "
+                f"({FRAME_LADDER[-1]}A) — priced as {FRAME_LADDER[-1]}A. Confirm with the factory."
+            )
+
+        frame = _priced_frame(run)
+        if frame != run.frame_rating_a:
+            notes.append(
+                f"{run.run_id}: no {run.frame_rating_a}A {run.material} busduct in the price "
+                f"list — priced at {frame}A, the smallest {run.material} size listed."
+            )
+            run = run.model_copy(update={"frame_rating_a": frame})
 
         if run.run_type == "TX-MSB":
             items = _build_tx_msb(run)
@@ -287,7 +331,7 @@ def build_boq(
         for item in (r.items + r.piu_items)
     )
 
-    warnings = [
+    warnings = notes + [
         f"{r.run_id}: '{item.description}' has no matching rate in the loaded "
         f"price list — priced at RM 0. Check the price list covers "
         f"{r.frame_rating_a}A {r.material}."

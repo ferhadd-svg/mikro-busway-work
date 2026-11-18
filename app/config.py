@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     bundled_price_list_dir: Path = _APP_DIR / "bundled_price_list"
     price_list_bundled_file: str = ""
 
+    # Largest drawing upload accepted. Drawings are read into memory and
+    # stored in the database, and Render's free instance has 512 MB.
+    max_drawing_mb: int = 50
+
     # Auth — session cookie is a random token looked up in the DB on every
     # request (see app/services/auth.py), so secret_key does NOT sign or
     # protect it. It's kept only as a general-purpose app secret for future

@@ -31,7 +31,7 @@ from app.schemas.project import (
 from app.schemas.boq import DrawingExtraction, FlagAnswers, BOQResponse
 from app.services.drawing_reader import read_drawing, pdf_page_thumbnails
 from app.services.price_list import price_list
-from app.services.boq_builder import build_boq, RunOverrideError
+from app.services.boq_builder import build_boq, BOQInputError
 from app.services.quotation_builder import build_quotation
 from app.services.auth import get_current_user, require_role
 from app.services.customers import get_or_create_customer
@@ -145,12 +145,25 @@ async def _save_uploaded_drawing(project: Project, file: UploadFile, db: Session
     suffix = Path(safe_filename).suffix.lower()
     if suffix not in _ALLOWED_DRAWING:
         raise HTTPException(400, f"Unsupported file type '{suffix}'. Allowed: {', '.join(_ALLOWED_DRAWING)}")
+    # Drawings are held in memory and copied into the database, so cap them
+    # (MAX_DRAWING_MB). Checked from the declared size first so an oversized
+    # upload is refused before it is read in.
+    limit = settings.max_drawing_mb * 1024 * 1024
+    too_big = HTTPException(
+        413, f"Drawing is larger than {settings.max_drawing_mb} MB. Upload only the "
+             f"SLD sheets (or a lower-resolution export)."
+    )
+    if (getattr(file, "size", None) or 0) > limit:
+        raise too_big
+    content = await file.read()
+    if len(content) > limit:
+        raise too_big
     # mkdir: the project folder is gone after a deploy wipes data/, even
     # though the project itself survives in the database.
     _project_dir(project.id).mkdir(parents=True, exist_ok=True)
     drawing_path = _project_dir(project.id) / safe_filename
     with open(drawing_path, "wb") as f:
-        f.write(await file.read())
+        f.write(content)
     project.drawing_filename = safe_filename
     file_store.save(db, "projects", drawing_path, subdir=str(project.id))
     file_store.delete_subdir_except(db, "projects", str(project.id), keep=safe_filename)
@@ -236,6 +249,7 @@ def submit_runs_manually(
     Each run must include: run_id, run_type, rating_a, material, earth_pct,
     routing, length_m, piu_ratings. frame_rating_a is computed automatically.
     """
+    from pydantic import ValidationError
     from app.services.price_list import resolve_frame_rating
     from app.schemas.boq import BusRun
 
@@ -243,15 +257,24 @@ def submit_runs_manually(
 
     validated_runs = []
     for i, r in enumerate(runs):
-        r.setdefault("run_id", f"RUN-{i+1}")
-        r.setdefault("frame_rating_a", resolve_frame_rating(r.get("rating_a", 200)))
+        label = r.get("run_id") or f"RUN-{i+1}"
+        rating = r.get("rating_a", 200)
+        # Bad input is the caller's mistake: answer 400 with what was wrong,
+        # not a 500 from resolve_frame_rating/BusRun blowing up.
+        if not isinstance(rating, (int, float)) or isinstance(rating, bool) or rating <= 0:
+            raise HTTPException(400, f"{label}: rating_a must be a positive number, got {rating!r}.")
+        r.setdefault("run_id", label)
+        r.setdefault("frame_rating_a", resolve_frame_rating(rating))
         r.setdefault("needs_bimetal", r.get("material", "AL") == "AL")
         r.setdefault("flags", [])
         r.setdefault("piu_ratings", [])
         r.setdefault("spare_openings", 0)
         r.setdefault("phases", "3P4W")
         r.setdefault("hanger_spacing_m", 1.5)
-        validated_runs.append(BusRun(**r))
+        try:
+            validated_runs.append(BusRun(**r))
+        except (ValidationError, TypeError) as e:
+            raise HTTPException(400, f"{label}: invalid run — {e}")
 
     extraction = DrawingExtraction(
         runs=validated_runs,
@@ -337,7 +360,7 @@ def generate_boq(project_id: int, db: Session = Depends(get_db), current_user: U
 
     try:
         result = build_boq(extraction, flags, project.our_ref, project.client_name)
-    except RunOverrideError as e:
+    except BOQInputError as e:
         raise HTTPException(400, str(e))
 
     project.boq_filename = Path(result.boq_file).name
@@ -368,11 +391,10 @@ def generate_quotation(project_id: int, db: Session = Depends(get_db), current_u
     extraction = DrawingExtraction.model_validate_json(project.drawing_extraction_json)
     flags = FlagAnswers.model_validate_json(project.flags_json)
 
-    # Re-build BOQ runs (reuse boq_builder logic without writing Excel again)
-    from app.services.boq_builder import build_boq as _build_boq
+    # Re-build the BOQ runs so the quotation is priced from the same data.
     try:
-        boq = _build_boq(extraction, flags, project.our_ref, project.client_name)
-    except RunOverrideError as e:
+        boq = build_boq(extraction, flags, project.our_ref, project.client_name)
+    except BOQInputError as e:
         raise HTTPException(400, str(e))
 
     # Find the salesperson's quotation template (uploaded copy wins; else the
@@ -550,8 +572,11 @@ def assign_salesperson(project_id: int, sp_id: int, db: Session = Depends(get_db
 
 @router.post("/templates/upload", dependencies=[Depends(require_role("admin"))])
 async def upload_template(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    if not file.filename.endswith((".xlsx", ".xls")):
-        raise HTTPException(400, "Only .xlsx or .xls templates accepted.")
+    # .xlsx only: the quotation is written with openpyxl, which can't open
+    # the old binary .xls format — an .xls template would be accepted here
+    # and then crash every quotation for that salesperson.
+    if not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(400, "Only .xlsx templates are accepted. Open an .xls template in Excel and Save As .xlsx.")
     safe_filename = Path(file.filename).name
     dest = settings.templates_dir / safe_filename
     with open(dest, "wb") as f:
@@ -594,7 +619,7 @@ def _find_salesperson_template(salesperson_name: str) -> Path | None:
     for folder in (settings.templates_dir, BUNDLED_TEMPLATES_DIR):
         if not folder.exists():
             continue
-        for f in sorted(folder.glob("*.xls*")):
+        for f in sorted(folder.glob("*.xlsx")):
             if first in f.name.lower():
                 return f
     return None

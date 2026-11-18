@@ -55,7 +55,7 @@ CRITICAL RULES — read every one before responding:
    - DO NOT use the ACB/MCCB frame size (e.g. "2000A TPN ACB", "1600AF") — that is the breaker, not the busduct.
    - DO NOT use a CT ratio (e.g. "2000/5A CT", "CL5P10", "600/5A") — that is metering, not the busduct.
    - If a busduct run has no ampere label of its own and the only nearby numbers are an ACB frame or CT ratio, set rating_a to null and add a flag "busduct rating not labelled — only ACB/CT visible, needs confirmation". Do NOT guess from the breaker/CT.
-   - frame_rating = the next standard frame in [200,400,630,800,1000,1250,1600,2000,2500,3200,4000,5000] (e.g. 500→630, 100→200). A busduct already labelled 1250A stays 1250A.
+   - frame_rating = the next standard frame in [200,400,630,800,1000,1250,1600,2000,2500,3200,4000,5000,6300] (e.g. 500→630, 100→200). A busduct already labelled 1250A stays 1250A.
 
 4. RUN TYPE & ROUTING — classify each busduct run by where it starts:
    - Transformer LV side → MSB, as busduct → type "TX-MSB", routing "FROM TX-n TO MSB-n". (Also genset→MSB and MSB↔MSB bus-tie busduct → "TX-MSB".)

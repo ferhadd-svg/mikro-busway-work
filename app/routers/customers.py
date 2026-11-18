@@ -44,6 +44,15 @@ def _customer_visible_to(customer: Customer, current_user: User, db: Session) ->
     return has_project is not None
 
 
+def _projects_visible_to(projects: list[Project], current_user: User) -> list[Project]:
+    """Seeing a customer doesn't mean seeing every rep's work for it: a sales
+    account only sees the projects it could open directly (same rule as
+    projects._get_or_404) — not other reps' quotations and quoted values."""
+    if current_user.role == "admin":
+        return projects
+    return [p for p in projects if p.salesperson_id == current_user.salesperson_id]
+
+
 def _get_customer_or_404(customer_id: int, db: Session, current_user: User) -> Customer:
     customer = db.get(Customer, customer_id)
     if not customer:
@@ -67,10 +76,15 @@ def list_customers(db: Session = Depends(get_db), current_user: User = Depends(g
         (c.customer_id, c)
         for c in db.query(CustomerContact).filter(CustomerContact.is_primary == True).all()
     )
-    project_counts = dict(
-        db.query(Project.customer_id, func.count(Project.id))
-        .group_by(Project.customer_id).all()
-    )
+    count_q = db.query(Project.customer_id, func.count(Project.id))
+    if current_user.role != "admin":
+        # Count only this rep's projects, matching what the detail page shows
+        # (a SQL "= NULL" never matches, hence is_(None) for unlinked accounts).
+        if current_user.salesperson_id is None:
+            count_q = count_q.filter(Project.salesperson_id.is_(None))
+        else:
+            count_q = count_q.filter(Project.salesperson_id == current_user.salesperson_id)
+    project_counts = dict(count_q.group_by(Project.customer_id).all())
 
     out = []
     for c in customers:
@@ -116,7 +130,10 @@ def get_customer(customer_id: int, db: Session = Depends(get_db), current_user: 
         no.author_name = user_names.get(n.author_id)
         note_outs.append(no)
 
-    projects = db.query(Project).filter(Project.customer_id == customer_id).order_by(Project.created_at.desc()).all()
+    projects = _projects_visible_to(
+        db.query(Project).filter(Project.customer_id == customer_id).order_by(Project.created_at.desc()).all(),
+        current_user,
+    )
 
     detail = CustomerDetailOut.model_validate(customer)
     detail.contacts = [CustomerContactOut.model_validate(c) for c in contacts]

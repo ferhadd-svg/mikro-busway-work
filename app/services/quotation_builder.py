@@ -10,7 +10,7 @@ Template structure assumptions (Mikro standard):
 
 import math
 import re
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import openpyxl
@@ -23,8 +23,18 @@ from app.models.salesperson import Salesperson
 from app.config import settings
 
 
+# Malaysia is UTC+8 all year (no daylight saving). The server runs in UTC, so
+# date.today() there would print yesterday's date on any quotation made
+# before 8am local time.
+_MYT = timezone(timedelta(hours=8), "MYT")
+
+
+def _today() -> date:
+    return datetime.now(_MYT).date()
+
+
 def _remarks_al(flags) -> list[str]:
-    today = date.today().strftime("%d-%m-%Y")
+    today = _today().strftime("%d-%m-%Y")
     return [
         "The quantities quoted are rough estimation only. Final busway amount shall based on the actual delivery and approved shop-drawings.",
         "All Bi-Metal materials for Aluminum Busway are by contractor.",
@@ -38,7 +48,7 @@ def _remarks_al(flags) -> list[str]:
 
 
 def _remarks_cu(flags) -> list[str]:
-    today = date.today().strftime("%d-%m-%Y")
+    today = _today().strftime("%d-%m-%Y")
     return [
         "The quantities quoted are rough estimation only. Final busway amount shall based on the actual delivery and approved shop-drawings.",
         "All Copper Bars are 100% Electro Tin-Plated.",
@@ -161,7 +171,7 @@ def _fill_labelled_fields(ws, salesperson, our_ref, client_name, attn, me_consul
         "TO": client_name or "",
         "ATTN": attn or "",
         "FROM": salesperson.name,
-        "DATE": date.today().strftime("%d-%m-%Y"),
+        "DATE": _today().strftime("%d-%m-%Y"),
     }
     inline_labels = {
         "OUR REF": our_ref or "",

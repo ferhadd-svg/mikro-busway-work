@@ -1351,7 +1351,7 @@
       </p>
       <label class="btn btn-secondary" style="cursor:pointer; display:inline-flex;">
         Upload template (.xlsx)
-        <input type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" style="display:none;" onchange="uploadTemplate(this)" />
+        <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none;" onchange="uploadTemplate(this)" />
       </label>
     </div>
 
@@ -2104,7 +2104,7 @@
 
       const warningsHtml = (boq.warnings && boq.warnings.length)
         ? `<div class="alert alert-error" style="margin-bottom:16px;">
-            <strong>${boq.warnings.length} item${boq.warnings.length > 1 ? 's' : ''} priced at RM 0</strong> — the loaded price list has no matching rate.
+            <strong>Check ${boq.warnings.length} pricing note${boq.warnings.length > 1 ? 's' : ''} before sending</strong> — items with no matching rate are priced at RM 0.
             <ul style="margin:6px 0 0; padding-left:18px;">
               ${boq.warnings.map(w => `<li>${w}</li>`).join('')}
             </ul>
@@ -2553,7 +2553,8 @@
       await loadPriceListStatus();
       await loadPriceListVersions();
       await loadPriceListRates();
-      alert_('success', `Price list '${file.name}' uploaded and activated (${res.row_count} rates parsed).`);
+      const missing = (res.warnings || []).length ? ` Note — ${res.warnings.join('; ')}: those items will price at RM 0.` : '';
+      alert_(missing ? 'error' : 'success', `Price list '${file.name}' uploaded and activated (${res.row_count} rates parsed).${missing}`);
     } catch(e) { alert_('error', e.message); }
   }
 

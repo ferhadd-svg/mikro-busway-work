@@ -11,7 +11,7 @@ from app.database import get_db
 from app.models.user import User
 from app.models.price_list_version import PriceListVersion
 from app.schemas.price_list import PriceListVersionOut, PriceRateOut
-from app.services.price_list import price_list
+from app.services.price_list import price_list, PriceList
 from app.services import file_store
 from app.services.auth import get_current_user, require_role
 
@@ -61,12 +61,27 @@ async def upload_price_list(
         content = await file.read()
         f.write(content)
 
+    # Parse into a throwaway instance first: a corrupt file, or one whose
+    # layout the parser doesn't recognise, must be rejected — never made the
+    # active list that every quotation is then priced from.
+    candidate = PriceList()
+    try:
+        candidate.load(dest)
+    except Exception as e:
+        dest.unlink(missing_ok=True)
+        raise HTTPException(400, f"Could not read '{safe_filename}' as a price list: {e}")
+    problems = candidate.coverage_problems()
+    if not any(k.startswith("feeder_") for k in {**candidate._al, **candidate._cu}):
+        dest.unlink(missing_ok=True)
+        raise HTTPException(
+            400,
+            f"'{safe_filename}' was not loaded — no feeder rates were found in it "
+            f"({'; '.join(problems)}). The current price list is still active.",
+        )
+
     price_list.load(dest)
     file_store.save(db, "price_list", dest)
-    row_count = (
-        len(price_list._al) + len(price_list._cu)
-        + len(price_list._piu) + len(price_list._bimetal)
-    )
+    row_count = price_list.row_count()
 
     db.query(PriceListVersion).filter(PriceListVersion.is_active == True).update(
         {"is_active": False}
@@ -80,7 +95,12 @@ async def upload_price_list(
     ))
     db.commit()
 
-    return {"message": f"Price list '{safe_filename}' loaded successfully.", "row_count": row_count}
+    return {
+        "message": f"Price list '{safe_filename}' loaded successfully.",
+        "row_count": row_count,
+        # Loaded, but some lines will price at RM 0 until a fuller list is uploaded.
+        "warnings": [f"Missing: {p}" for p in problems],
+    }
 
 
 @router.post("/activate/{filename}", dependencies=[Depends(require_role("admin"))])

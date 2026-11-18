@@ -22,7 +22,8 @@ def test_below_minimum_clamps_to_smallest_frame():
 
 def test_above_maximum_clamps_to_largest_frame():
     assert resolve_frame_rating(5000) == 5000
-    assert resolve_frame_rating(6000) == 5000
+    assert resolve_frame_rating(6000) == 6300   # the 6300A frame is listed
+    assert resolve_frame_rating(8000) == 6300
 
 
 # ------------------------------------------------------------------ #
